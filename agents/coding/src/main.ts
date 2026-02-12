@@ -10,8 +10,6 @@ const _devtools = startDevToolsServer();
 
 const app = createCodingApp({ model, devTools: true });
 
-console.clear();
-
 const tui = createTUI({
   app,
   ui: CodingTUI,

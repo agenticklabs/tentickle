@@ -12,7 +12,6 @@ export type CodingAgentProps = {
 
 export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
   useContinuation((result) => {
-    console.log(result);
     return (
       !result.text?.includes("<DONE>") &&
       result.tick < 30 &&

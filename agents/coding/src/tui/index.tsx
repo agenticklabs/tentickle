@@ -1,21 +1,52 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import { useSession, useStreamingText, useContextInfo } from "@agentick/react";
-import { ToolConfirmationPrompt, ErrorDisplay } from "@agentick/tui";
+import { useSession, useEvents, useContextInfo } from "@agentick/react";
+import {
+  ToolConfirmationPrompt,
+  ErrorDisplay,
+  InputBar,
+  ToolCallIndicator,
+  Spinner,
+} from "@agentick/tui";
 import type { TUIComponent } from "@agentick/tui";
-import type { ChatMode, UIMode } from "./types.js";
-import { Header } from "./components/Header.js";
+import type { ChatMode, ChatMessage } from "./types.js";
 import { Footer } from "./components/Footer.js";
-import { MessageArea } from "./components/MessageArea.js";
-import { StreamingZone } from "./components/StreamingZone.js";
-import { CodingInputBar } from "./components/CodingInputBar.js";
+import { printBanner } from "./components/Banner.js";
 import { useMessageHistory } from "./hooks/useMessageHistory.js";
 import { useDoubleCtrlC } from "./hooks/useDoubleCtrlC.js";
-import { useTerminalSize } from "./hooks/useTerminalSize.js";
-import { useScrollable } from "./hooks/useScrollable.js";
 
-// Chrome = header (3) + input (3) + footer (3)
-const CHROME_HEIGHT = 9;
+// ANSI helpers for console.log output
+const ansi = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  blue: "\x1b[34m",
+  magenta: "\x1b[35m",
+  gray: "\x1b[90m",
+};
+
+const EXEC_EVENT_FILTER: Array<"execution_start" | "execution_end"> = [
+  "execution_start",
+  "execution_end",
+];
+
+function printMessage(msg: ChatMessage): void {
+  const color = msg.role === "user" ? ansi.blue : ansi.magenta;
+  const label = msg.role === "user" ? "you" : "assistant";
+  console.log(`${color}${ansi.bold}${label}${ansi.reset}`);
+  console.log(`  ${msg.content}`);
+
+  if (msg.toolCalls && msg.toolCalls.length > 0) {
+    for (const tc of msg.toolCalls) {
+      const dur =
+        tc.duration != null
+          ? ` (${tc.duration < 1000 ? `${tc.duration}ms` : `${(tc.duration / 1000).toFixed(1)}s`})`
+          : "";
+      console.log(`  ${ansi.dim}+ ${tc.name}${dur}${ansi.reset}`);
+    }
+  }
+  console.log(); // blank line between messages
+}
 
 interface ToolConfirmationState {
   request: {
@@ -30,43 +61,50 @@ interface ToolConfirmationState {
 export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
   const { send, abort, accessor } = useSession({ sessionId, autoSubscribe: true });
-  const { isStreaming } = useStreamingText();
+  const { event: execEvent } = useEvents({
+    sessionId,
+    filter: EXEC_EVENT_FILTER,
+  });
   const { contextInfo } = useContextInfo({ sessionId });
-  const { width: termWidth, height: termHeight } = useTerminalSize();
 
   const [chatMode, setChatMode] = useState<ChatMode>("idle");
-  const [uiMode, setUiMode] = useState<UIMode>("input");
   const [error, setError] = useState<Error | string | null>(null);
   const [toolConfirmation, setToolConfirmation] = useState<ToolConfirmationState | null>(null);
   const [inputValue, setInputValue] = useState("");
 
-  const { messages, addUserMessage, clear: clearMessages } = useMessageHistory(sessionId);
-
-  const contentHeight = Math.max(3, termHeight - CHROME_HEIGHT);
-  const { visibleMessages, scrollUp, scrollDown, pageUp, pageDown, isAtBottom } = useScrollable(
-    messages,
-    contentHeight,
-    termWidth,
-  );
+  const { messages, pending, addUserMessage, clear: clearMessages } = useMessageHistory(sessionId);
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
-  // Auto-exit scroll mode when scrolled back to bottom
-  useEffect(() => {
-    if (uiMode === "scroll" && isAtBottom) {
-      setUiMode("input");
-    }
-  }, [uiMode, isAtBottom]);
+  const loggedCount = useRef(0);
 
-  // Sync streaming state -> chatMode
+  // Print banner to scrollback on mount
   useEffect(() => {
-    if (isStreaming && chatMode === "idle") {
+    printBanner();
+  }, []);
+
+  // Print new messages to stdout via console.log.
+  // Ink intercepts console.log and renders it above the dynamic area.
+  useEffect(() => {
+    if (messages.length <= loggedCount.current) return;
+
+    const newMessages = messages.slice(loggedCount.current);
+    for (const msg of newMessages) {
+      printMessage(msg);
+    }
+    loggedCount.current = messages.length;
+  }, [messages]);
+
+  // Sync execution events -> chatMode
+  useEffect(() => {
+    if (!execEvent) return;
+    if (execEvent.type === "execution_start" && chatMode === "idle") {
       setChatMode("streaming");
       setError(null);
-    } else if (!isStreaming && chatMode === "streaming") {
+    } else if (execEvent.type === "execution_end" && chatMode === "streaming") {
       setChatMode("idle");
     }
-  }, [isStreaming, chatMode]);
+  }, [execEvent, chatMode]);
 
   // Register tool confirmation handler
   useEffect(() => {
@@ -87,6 +125,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       }
       if (text === "/clear") {
         clearMessages();
+        loggedCount.current = 0;
         return;
       }
 
@@ -120,18 +159,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     [toolConfirmation],
   );
 
-  // During streaming at bottom: show all messages, let flex-end + overflow clip old ones.
-  // During streaming scrolled up: show windowed messages (user is reviewing history).
-  // During idle: always use windowed messages from useScrollable.
-  const showStreaming = chatMode === "streaming" && isAtBottom;
-  const messagesToShow =
-    chatMode === "streaming" && isAtBottom
-      ? messages.slice(-10) // During streaming, show last ~10 messages + streaming zone
-      : visibleMessages;
-
   // Global keybindings
   useInput((input, key) => {
-    // Ctrl+C: double-tap exit or abort
     if (key.ctrl && input === "c") {
       handleCtrlC(chatMode === "streaming", () => {
         abort();
@@ -140,94 +169,41 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       return;
     }
 
-    // Ctrl+L: clear history + reset input (runs after TextInput's handler in same batch)
     if (key.ctrl && input === "l") {
       clearMessages();
+      loggedCount.current = 0;
       setInputValue("");
-      return;
-    }
-
-    // Ctrl+U / Ctrl+D: vi-style half-page scroll (also enters scroll mode)
-    if (key.ctrl && input === "u") {
-      if (uiMode === "input") setUiMode("scroll");
-      setInputValue("");
-      pageUp();
-      return;
-    }
-    if (key.ctrl && input === "d") {
-      setInputValue("");
-      pageDown();
-      if (isAtBottom) setUiMode("input");
-      return;
-    }
-
-    // Scroll mode navigation
-    if (uiMode === "scroll") {
-      if (key.upArrow) {
-        scrollUp();
-        return;
-      }
-      if (key.downArrow) {
-        scrollDown();
-        return;
-      }
-      if (key.escape) {
-        setUiMode("input");
-        return;
-      }
-    }
-
-    // PageUp/PageDown: also works if terminal passes them through
-    if (key.pageUp) {
-      if (uiMode === "input") setUiMode("scroll");
-      pageUp();
-      return;
-    }
-    if (key.pageDown) {
-      pageDown();
-      if (isAtBottom) setUiMode("input");
       return;
     }
   });
 
-  const isInputActive = uiMode === "input" && chatMode === "idle";
+  const isInputActive = chatMode === "idle";
 
   return (
-    <Box flexDirection="column" height={termHeight}>
-      <Header chatMode={chatMode} contextInfo={contextInfo} />
-
-      {/* Single content area: messages + streaming, height-constrained */}
-      <Box
-        flexDirection="column"
-        height={contentHeight}
-        overflow="hidden"
-        justifyContent="flex-end"
-        paddingX={1}
-      >
-        {messagesToShow.length === 0 && chatMode === "idle" ? (
-          <Text color="gray">No messages yet. Type below to start.</Text>
-        ) : (
-          <MessageArea messages={messagesToShow} />
-        )}
-
-        {showStreaming && <StreamingZone isActive sessionId={sessionId} />}
-
-        {!isAtBottom && chatMode === "idle" && (
-          <Box justifyContent="center">
-            <Text color="gray" dimColor>
-              --- scrolled up (PgUp/PgDn to navigate, Esc to return) ---
-            </Text>
+    <Box flexDirection="column">
+      {/* Pending user message (optimistic, before server confirms) */}
+      {pending && (
+        <Box flexDirection="column" marginBottom={1}>
+          <Text color="blue" bold>
+            you
+          </Text>
+          <Box marginLeft={2}>
+            <Text wrap="wrap">{pending.content}</Text>
           </Box>
-        )}
+        </Box>
+      )}
 
-        {!isAtBottom && chatMode === "streaming" && (
-          <Box justifyContent="center">
-            <Text color="yellow" dimColor>
-              --- streaming below (PgDn to return) ---
+      {chatMode === "streaming" && (
+        <Box marginBottom={1}>
+          <Box flexDirection="row" gap={1}>
+            <Text color="yellow">
+              <Spinner type="dots" />
             </Text>
+            <Text color="yellow">Thinking...</Text>
           </Box>
-        )}
-      </Box>
+          <ToolCallIndicator sessionId={sessionId} />
+        </Box>
+      )}
 
       {chatMode === "confirming_tool" && toolConfirmation && (
         <ToolConfirmationPrompt
@@ -238,23 +214,21 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
       {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
 
-      <CodingInputBar
+      <InputBar
         value={inputValue}
         onChange={setInputValue}
         onSubmit={handleSubmit}
         isDisabled={!isInputActive}
         placeholder={
           chatMode === "streaming"
-            ? "Streaming..."
+            ? "Thinking..."
             : chatMode === "confirming_tool"
               ? "Confirm tool above..."
-              : uiMode === "scroll"
-                ? "Scroll mode (Esc to return)"
-                : "Describe what you need..."
+              : "Describe what you need..."
         }
       />
 
-      <Footer chatMode={chatMode} uiMode={uiMode} showExitHint={showExitHint} />
+      <Footer chatMode={chatMode} contextInfo={contextInfo} showExitHint={showExitHint} />
     </Box>
   );
 };

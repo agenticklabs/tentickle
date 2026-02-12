@@ -1,5 +1,4 @@
 export type ChatMode = "idle" | "streaming" | "confirming_tool";
-export type UIMode = "input" | "scroll";
 
 export interface ToolCallEntry {
   id: string;

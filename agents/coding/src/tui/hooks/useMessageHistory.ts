@@ -24,11 +24,57 @@ function extractToolCalls(content: ContentBlock[]): ToolCallEntry[] {
     }));
 }
 
+type TimelineEntry = { kind?: string; message?: Message };
+
+function timelineToMessages(
+  entries: TimelineEntry[],
+  toolDurations: Map<string, number>,
+): ChatMessage[] {
+  return entries
+    .filter(
+      (entry) =>
+        entry.kind === "message" &&
+        entry.message &&
+        (entry.message.role === "user" || entry.message.role === "assistant"),
+    )
+    .map((entry, i) => {
+      const msg = entry.message!;
+      const content = Array.isArray(msg.content) ? msg.content : [];
+      const toolCalls = msg.role === "assistant" ? extractToolCalls(content) : undefined;
+
+      const toolCallsWithDurations = toolCalls?.map((tc) => ({
+        ...tc,
+        duration: toolDurations.get(tc.id),
+      }));
+
+      return {
+        id: msg.id ?? `msg-${i}`,
+        role: msg.role as "user" | "assistant",
+        content: extractText(msg.content),
+        toolCalls:
+          toolCallsWithDurations && toolCallsWithDurations.length > 0
+            ? toolCallsWithDurations
+            : undefined,
+      };
+    });
+}
+
+/**
+ * Flat message history — confirmed messages go straight to Static.
+ *
+ * - `messages`: all confirmed messages (append-only). Fed to <Static> so they
+ *   commit to terminal scrollback immediately. Never re-rendered, never flicker.
+ * - `pending`: optimistic user message in the dynamic area until confirmed.
+ *
+ * The dynamic area stays small (pending + streaming + input + footer) regardless
+ * of how long responses are. Long responses live in scrollback, not dynamic area.
+ */
 export function useMessageHistory(sessionId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  // Tool call durations tracked separately, applied when timeline arrives
+  const [pending, setPending] = useState<ChatMessage | null>(null);
   const toolDurations = useRef<Map<string, number>>(new Map());
   const toolTimers = useRef<Map<string, number>>(new Map());
+  const messageCount = useRef(0);
 
   const { event } = useEvents({
     sessionId,
@@ -38,7 +84,6 @@ export function useMessageHistory(sessionId: string) {
   useEffect(() => {
     if (!event) return;
 
-    // Track tool call durations for later application
     if (event.type === "tool_call_start") {
       const e = event as StreamEvent & { callId?: string };
       const id = e.callId ?? "unknown";
@@ -57,67 +102,52 @@ export function useMessageHistory(sessionId: string) {
 
     if (event.type === "execution_end") {
       const execEnd = event as StreamEvent & {
-        output?: {
-          timeline?: Array<{ kind?: string; message?: Message }>;
-        };
+        newTimelineEntries?: TimelineEntry[];
+        output?: { timeline?: TimelineEntry[] };
       };
 
+      // Prefer delta (append) over full timeline (replace)
+      if (execEnd.newTimelineEntries && execEnd.newTimelineEntries.length > 0) {
+        const newMessages = timelineToMessages(execEnd.newTimelineEntries, toolDurations.current);
+        if (newMessages.length > 0) {
+          setMessages((prev) => [...prev, ...newMessages]);
+          messageCount.current += newMessages.length;
+        }
+        setPending(null);
+        toolTimers.current.clear();
+        return;
+      }
+
+      // Fallback: full timeline replace — extract only new messages
       const timeline = execEnd.output?.timeline;
-      if (!Array.isArray(timeline)) return;
-
-      // Timeline IS the conversation. Extract all messages, REPLACE state.
-      const allMessages: ChatMessage[] = timeline
-        .filter(
-          (entry) =>
-            entry.kind === "message" &&
-            entry.message &&
-            (entry.message.role === "user" || entry.message.role === "assistant"),
-        )
-        .map((entry, i) => {
-          const msg = entry.message!;
-          const content = Array.isArray(msg.content) ? msg.content : [];
-          const toolCalls = msg.role === "assistant" ? extractToolCalls(content) : undefined;
-
-          // Apply tracked durations to tool calls
-          const toolCallsWithDurations = toolCalls?.map((tc) => ({
-            ...tc,
-            duration: toolDurations.current.get(tc.id),
-          }));
-
-          return {
-            id: msg.id ?? `msg-${i}`,
-            role: msg.role as "user" | "assistant",
-            content: extractText(msg.content),
-            toolCalls:
-              toolCallsWithDurations && toolCallsWithDurations.length > 0
-                ? toolCallsWithDurations
-                : undefined,
-          };
-        });
-
-      toolTimers.current.clear();
-      setMessages(allMessages);
+      if (Array.isArray(timeline)) {
+        const allMessages = timelineToMessages(timeline, toolDurations.current);
+        const newMessages = allMessages.slice(messageCount.current);
+        if (newMessages.length > 0) {
+          setMessages((prev) => [...prev, ...newMessages]);
+          messageCount.current += newMessages.length;
+        }
+        setPending(null);
+        toolTimers.current.clear();
+      }
     }
   }, [event]);
 
-  // Instant feedback — user sees their message immediately, before execution_end
-  // arrives with the canonical timeline. Gets overwritten on next execution_end.
   const addUserMessage = useCallback((content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        role: "user",
-        content,
-      },
-    ]);
+    setPending({
+      id: `pending-${Date.now()}`,
+      role: "user",
+      content,
+    });
   }, []);
 
   const clear = useCallback(() => {
     setMessages([]);
+    setPending(null);
+    messageCount.current = 0;
     toolTimers.current.clear();
     toolDurations.current.clear();
   }, []);
 
-  return { messages, addUserMessage, clear };
+  return { messages, pending, addUserMessage, clear };
 }
