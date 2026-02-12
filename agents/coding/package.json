@@ -1,0 +1,48 @@
+{
+  "name": "@tentickle/coding",
+  "version": "0.0.1",
+  "description": "Coding agent — autonomous software engineering",
+  "bin": {
+    "tentickle": "bin/tentickle.ts"
+  },
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node --env-file=../../.env --import tsx bin/tentickle.ts",
+    "dev": "node --env-file=../../.env --import tsx --watch bin/tentickle.ts",
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src/",
+    "format:check": "oxfmt --check src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentick/agent": "*",
+    "@agentick/client": "*",
+    "@agentick/core": "*",
+    "@agentick/devtools": "*",
+    "@agentick/openai": "*",
+    "@agentick/react": "*",
+    "@agentick/sandbox": "*",
+    "@agentick/sandbox-local": "*",
+    "@agentick/shared": "*",
+    "@agentick/tui": "*",
+    "@tentickle/tools": "workspace:*",
+    "agentick": "*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "ink": "^5.1.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

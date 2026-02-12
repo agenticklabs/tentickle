@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - agents/*
+  - website
+
+autoInstallPeers: true
+
+onlyBuiltDependencies:
+  - esbuild

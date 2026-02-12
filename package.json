@@ -1,0 +1,90 @@
+{
+  "name": "tentickle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Coding agent built on agentick",
+  "keywords": [
+    "agent",
+    "agentick",
+    "ai",
+    "assistant",
+    "autonomous",
+    "coding",
+    "openclaw"
+  ],
+  "homepage": "https://github.com/agenticklabs/tentickle#readme",
+  "bugs": {
+    "url": "https://github.com/agenticklabs/tentickle/issues"
+  },
+  "license": "MIT",
+  "author": "Ryan Lindgren",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticklabs/tentickle.git"
+  },
+  "type": "module",
+  "scripts": {
+    "prepare": "simple-git-hooks",
+    "build": "turbo build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "lint:all": "turbo lint && eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "oxfmt --write .",
+    "format:check": "turbo format:check",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "publish-packages": "turbo run test build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.0.0",
+    "@commitlint/cli": "^20.4.1",
+    "@commitlint/config-conventional": "^20.4.1",
+    "@types/node": "^25.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.54.0",
+    "@typescript-eslint/parser": "^8.54.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^9.39.2",
+    "eslint-plugin-oxlint": "^1.43.0",
+    "oxfmt": "^0.28.0",
+    "oxlint": "^1.43.0",
+    "simple-git-hooks": "^2.13.1",
+    "turbo": "^2.8.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "zod": "^4.1.13"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "pnpm run format:check && pnpm run lint:all",
+    "commit-msg": "npx --no -- commitlint --config commitlint.config.cjs --edit ${1}"
+  },
+  "packageManager": "pnpm@10.25.0",
+  "pnpm": {
+    "overrides": {
+      "agentick": "link:../agentick/packages/agentick",
+      "@agentick/core": "link:../agentick/packages/core",
+      "@agentick/agent": "link:../agentick/packages/agent",
+      "@agentick/kernel": "link:../agentick/packages/kernel",
+      "@agentick/shared": "link:../agentick/packages/shared",
+      "@agentick/sandbox": "link:../agentick/packages/sandbox",
+      "@agentick/sandbox-local": "link:../agentick/packages/sandbox-local",
+      "@agentick/tui": "link:../agentick/packages/tui",
+      "@agentick/react": "link:../agentick/packages/react",
+      "@agentick/client": "link:../agentick/packages/client",
+      "@agentick/openai": "link:../agentick/packages/adapters/openai",
+      "@agentick/google": "link:../agentick/packages/adapters/google",
+      "@agentick/devtools": "link:../agentick/packages/devtools",
+      "react": "link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react",
+      "react-reconciler": "0.31.0",
+      "ink": "link:../agentick/packages/tui/node_modules/ink",
+      "ink-text-input": "link:../agentick/packages/tui/node_modules/ink-text-input"
+    }
+  }
+}

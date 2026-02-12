@@ -1,0 +1,29 @@
+{
+  "name": "@tentickle/tools",
+  "version": "0.0.1",
+  "description": "Tool components for tentickle agents",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src/",
+    "format:check": "oxfmt --check src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentick/core": "*",
+    "@agentick/sandbox": "*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "react": "^19.0.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

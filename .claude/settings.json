@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm build)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm format)",
+      "Bash(pnpm format:*)",
+      "Bash(pnpm dev)",
+      "Bash(pnpm install)",
+      "Bash(pnpm add:*)",
+      "Bash(turbo:*)",
+      "Bash(vitest:*)",
+      "Bash(tsc:*)",
+      "Bash(node:*)",
+      "Bash(npx:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git stash:*)",
+      "Read(CLAUDE.md)",
+      "Read(AGENTS.md)",
+      "Read(ARCHITECTURE.md)",
+      "Read(CONTRIBUTING.md)",
+      "Read(packages/**/ARCHITECTURE.md)",
+      "Read(packages/**/README.md)"
+    ],
+    "deny": ["Bash(rm -rf:*)", "Bash(git push --force:*)", "Read(*.env)", "Write(*.env)"]
+  },
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "companyAnnouncements": [
+    "Tentickle: Coding agent built on @agentick — the proving ground for the framework.",
+    "Dual-repo workflow: tentickle consumes agentick. When the framework is deficient, we fix agentick upstream via PRs.",
+    "Agentick is NOT a static dependency. We are co-developers. Framework improvements are first-class work.",
+    "Start with: CLAUDE.md (project guidance), AGENTS.md (architecture & mission), CONTRIBUTING.md (conventions).",
+    "Zero tolerance: no backwards compat shims, no legacy code, no dead code paths, no deprecations. Delete, don't deprecate.",
+    "Monorepo: pnpm workspaces + Turborepo. packages/ for agent modules, composable and specialized.",
+    "Before committing: pnpm test && pnpm typecheck && pnpm lint. All must pass.",
+    "Agent philosophy: composable components > monolithic agents. Build small, compose large.",
+    "Agentick docs: ../agentick/README.md, ../agentick/website/index.md for framework reference."
+  ]
+}
