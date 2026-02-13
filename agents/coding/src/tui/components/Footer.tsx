@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { ContextInfo } from "@agentick/react";
-import type { ChatMode } from "../types.js";
+import type { ChatMode } from "@agentick/client";
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

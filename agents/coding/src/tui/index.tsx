@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import { useSession, useEvents, useContextInfo } from "@agentick/react";
+import { useSession, useContextInfo, useChat } from "@agentick/react";
 import {
   ToolConfirmationPrompt,
   ErrorDisplay,
@@ -17,48 +17,30 @@ import {
 } from "@agentick/tui";
 import type { TUIComponent } from "@agentick/tui";
 import { extractText } from "@agentick/shared";
-import type { ChatMode } from "./types.js";
+import type { Message } from "@agentick/shared";
 import { Footer } from "./components/Footer.js";
 import { printBanner } from "./components/Banner.js";
-import { useMessageHistory } from "./hooks/useMessageHistory.js";
 import { useDoubleCtrlC } from "./hooks/useDoubleCtrlC.js";
-
-const EXEC_EVENT_FILTER: Array<"execution_start" | "execution_end"> = [
-  "execution_start",
-  "execution_end",
-];
-
-interface ToolConfirmationState {
-  request: {
-    toolUseId: string;
-    name: string;
-    arguments: Record<string, unknown>;
-    message?: string;
-  };
-  respond: (response: { approved: boolean; reason?: string }) => void;
-}
 
 export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
-  const { send, abort, accessor } = useSession({ sessionId, autoSubscribe: true });
-  const { event: execEvent } = useEvents({
-    sessionId,
-    filter: EXEC_EVENT_FILTER,
-  });
+  const { abort } = useSession({ sessionId, autoSubscribe: true });
   const { contextInfo } = useContextInfo({ sessionId });
 
-  const [chatMode, setChatMode] = useState<ChatMode>("idle");
-  const [error, setError] = useState<Error | string | null>(null);
-  const [toolConfirmation, setToolConfirmation] = useState<ToolConfirmationState | null>(null);
-  const [inputValue, setInputValue] = useState("");
-
   const {
-    messages,
-    pending,
+    submit,
     queued,
-    addUserMessage,
-    clear: clearMessages,
-  } = useMessageHistory(sessionId);
+    isExecuting,
+    chatMode,
+    messages,
+    toolConfirmation,
+    respondToConfirmation,
+    clearMessages,
+    lastSubmitted,
+  } = useChat({ sessionId, mode: "queue", flushMode: "sequential" });
+
+  const [error, setError] = useState<Error | string | null>(null);
+  const [inputValue, setInputValue] = useState("");
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
@@ -70,7 +52,6 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
   }, []);
 
   // Print new messages to stdout via console.log.
-  // Ink intercepts console.log and renders it above the dynamic area.
   useEffect(() => {
     if (messages.length <= loggedCount.current) return;
 
@@ -84,32 +65,10 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     loggedCount.current = messages.length;
   }, [messages]);
 
-  // Sync execution events -> chatMode
-  useEffect(() => {
-    if (!execEvent) return;
-    if (execEvent.type === "execution_start" && chatMode === "idle") {
-      setChatMode("streaming");
-      setError(null);
-    } else if (execEvent.type === "execution_end" && chatMode === "streaming") {
-      setChatMode("idle");
-    }
-  }, [execEvent, chatMode]);
-
-  // Register tool confirmation handler
-  useEffect(() => {
-    if (!accessor) return;
-    return accessor.onToolConfirmation(
-      (request: ToolConfirmationState["request"], respond: ToolConfirmationState["respond"]) => {
-        setToolConfirmation({ request, respond });
-        setChatMode("confirming_tool");
-      },
-    );
-  }, [accessor]);
-
   const configCommands = useCommandsConfig();
   const commandCtx = useMemo(
-    () => ({ sessionId, send, abort, output: console.log }),
-    [sessionId, send, abort],
+    () => ({ sessionId, send: submit as any, abort, output: console.log }),
+    [sessionId, submit, abort],
   );
   const { dispatch } = useSlashCommands(
     [
@@ -130,33 +89,9 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       if (dispatch(text)) return;
 
       setError(null);
-      addUserMessage(text);
-
-      try {
-        send({
-          messages: [
-            {
-              role: "user" as const,
-              content: [{ type: "text" as const, text }],
-            },
-          ],
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err : String(err));
-      }
+      submit(text);
     },
-    [dispatch, send, addUserMessage],
-  );
-
-  const handleToolConfirmationResponse = useCallback(
-    (response: { approved: boolean; reason?: string }) => {
-      if (toolConfirmation) {
-        toolConfirmation.respond(response);
-        setToolConfirmation(null);
-        setChatMode("streaming");
-      }
-    },
-    [toolConfirmation],
+    [dispatch, submit],
   );
 
   // Global keybindings
@@ -164,7 +99,6 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     if (key.ctrl && input === "c") {
       handleCtrlC(chatMode === "streaming", () => {
         abort();
-        setChatMode("idle");
       });
       return;
     }
@@ -177,15 +111,13 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     }
   });
 
-  // const isInputActive = chatMode === "idle";
-
   return (
     <Box flexDirection="column">
-      {/* Pending user message (optimistic, before server confirms) */}
-      {pending && (
+      {/* Optimistic user message — submitted but not yet confirmed in timeline */}
+      {lastSubmitted && isExecuting && (
         <Box flexDirection="column" marginBottom={1}>
           <Text dimColor wrap="wrap">
-            {extractText(pending.content)}
+            {lastSubmitted}
           </Text>
         </Box>
       )}
@@ -205,8 +137,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       {/* Queued messages — submitted during execution, waiting their turn */}
       {queued.length > 0 && (
         <Box flexDirection="column" marginBottom={1}>
-          {queued.map((msg) => (
-            <Box key={msg.id} flexDirection="row">
+          {queued.map((msg: Message, i: number) => (
+            <Box key={i} flexDirection="row">
               <Text dimColor wrap="wrap">
                 {extractText(msg.content)}
               </Text>
@@ -218,14 +150,12 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       {chatMode === "confirming_tool" && toolConfirmation && (
         <ToolConfirmationPrompt
           request={toolConfirmation.request}
-          onRespond={handleToolConfirmationResponse}
+          onRespond={respondToConfirmation}
         />
       )}
 
       {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
 
-      {/* TODO: Enable input during execution for steering messages (session.queue).
-          Long-running executions need user communication — inject messages mid-run. */}
       <InputBar
         value={inputValue}
         onChange={setInputValue}
