@@ -52,7 +52,13 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const [toolConfirmation, setToolConfirmation] = useState<ToolConfirmationState | null>(null);
   const [inputValue, setInputValue] = useState("");
 
-  const { messages, pending, addUserMessage, clear: clearMessages } = useMessageHistory(sessionId);
+  const {
+    messages,
+    pending,
+    queued,
+    addUserMessage,
+    clear: clearMessages,
+  } = useMessageHistory(sessionId);
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
@@ -193,6 +199,19 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
             <Text color="yellow">Thinking...</Text>
           </Box>
           <ToolCallIndicator sessionId={sessionId} />
+        </Box>
+      )}
+
+      {/* Queued messages — submitted during execution, waiting their turn */}
+      {queued.length > 0 && (
+        <Box flexDirection="column" marginBottom={1}>
+          {queued.map((msg) => (
+            <Box key={msg.id} flexDirection="row">
+              <Text dimColor wrap="wrap">
+                {extractText(msg.content)}
+              </Text>
+            </Box>
+          ))}
         </Box>
       )}
 

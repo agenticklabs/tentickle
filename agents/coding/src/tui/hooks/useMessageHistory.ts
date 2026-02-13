@@ -5,28 +5,37 @@ import type { ChatMessage } from "../types.js";
 import { timelineToMessages, type TimelineEntry } from "../message-transforms.js";
 
 /**
- * Flat message history — confirmed messages go straight to scrollback.
+ * Flat message history with execution-aware queuing.
  *
- * - `messages`: all confirmed messages (append-only). Printed via console.log
- *   so Ink commits them to terminal scrollback. Never re-rendered, never flicker.
- * - `pending`: optimistic user message in the dynamic area until confirmed.
+ * - `messages`: confirmed messages (append-only). Printed via console.log
+ *   so Ink commits them to terminal scrollback.
+ * - `pending`: optimistic user message currently being processed.
+ * - `queued`: messages submitted during an active execution, waiting their turn.
  *
- * Messages preserve raw content (string | ContentBlock[]) for per-type rendering.
+ * When the user submits while an execution is running, the message goes to
+ * `queued` instead of overwriting `pending`. On execution end, the first
+ * queued message promotes to `pending` for the next execution cycle.
  */
 export function useMessageHistory(sessionId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<ChatMessage | null>(null);
+  const [queued, setQueued] = useState<ChatMessage[]>([]);
+  const executing = useRef(false);
   const toolDurations = useRef<Map<string, number>>(new Map());
   const toolTimers = useRef<Map<string, number>>(new Map());
   const messageCount = useRef(0);
 
   const { event } = useEvents({
     sessionId,
-    filter: ["execution_end", "tool_call_start", "tool_result"],
+    filter: ["execution_start", "execution_end", "tool_call_start", "tool_result"],
   });
 
   useEffect(() => {
     if (!event) return;
+
+    if (event.type === "execution_start") {
+      executing.current = true;
+    }
 
     if (event.type === "tool_call_start") {
       const e = event as ToolCallStartEvent;
@@ -44,6 +53,7 @@ export function useMessageHistory(sessionId: string) {
 
     if (event.type === "execution_end") {
       const execEnd = event as ExecutionEndEvent;
+      executing.current = false;
 
       // Prefer delta (append) over full timeline (replace)
       const delta = execEnd.newTimelineEntries as TimelineEntry[] | undefined;
@@ -53,14 +63,12 @@ export function useMessageHistory(sessionId: string) {
           setMessages((prev) => [...prev, ...newMessages]);
           messageCount.current += newMessages.length;
         }
-        setPending(null);
+        drainQueue();
         toolTimers.current.clear();
         return;
       }
 
       // Fallback: full timeline replace — extract only new messages
-      // NOTE: output.timeline is not typed in ExecutionEndEvent (output is `unknown`).
-      // This is a framework gap — should be typed upstream in @agentick/shared.
       const output = execEnd.output as { timeline?: TimelineEntry[] } | undefined;
       const timeline = output?.timeline;
       if (Array.isArray(timeline)) {
@@ -70,28 +78,47 @@ export function useMessageHistory(sessionId: string) {
           setMessages((prev) => [...prev, ...newMessages]);
           messageCount.current += newMessages.length;
         }
-        setPending(null);
+        drainQueue();
         toolTimers.current.clear();
       }
     }
   }, [event]);
 
-  // Will support attachments (images, files, etc.) — content becomes ContentBlock[]
+  // Promote first queued message to pending, or clear pending
+  function drainQueue() {
+    setQueued((prev) => {
+      if (prev.length > 0) {
+        setPending(prev[0]);
+        return prev.slice(1);
+      }
+      setPending(null);
+      return prev;
+    });
+  }
+
   const addUserMessage = useCallback((content: string) => {
-    setPending({
+    const msg: ChatMessage = {
       id: `pending-${Date.now()}`,
       role: "user",
       content,
-    });
+    };
+
+    if (executing.current) {
+      setQueued((prev) => [...prev, msg]);
+    } else {
+      setPending(msg);
+    }
   }, []);
 
   const clear = useCallback(() => {
     setMessages([]);
     setPending(null);
+    setQueued([]);
     messageCount.current = 0;
+    executing.current = false;
     toolTimers.current.clear();
     toolDurations.current.clear();
   }, []);
 
-  return { messages, pending, addUserMessage, clear };
+  return { messages, pending, queued, addUserMessage, clear };
 }

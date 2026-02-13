@@ -525,3 +525,224 @@ describe("flat message accumulation", () => {
     expect(hook.pending).toBeNull();
   });
 });
+
+// ============================================================================
+// Tests: Queued messages during active execution
+// ============================================================================
+
+describe("queued messages during execution", () => {
+  /**
+   * Simulates the hook with execution lifecycle awareness.
+   * This is the desired behavior — queued messages survive execution end.
+   */
+  function createExecutionAwareHook() {
+    let messages: ChatMessage[] = [];
+    let pending: ChatMessage | null = null;
+    let queued: ChatMessage[] = [];
+    let messageCount = 0;
+    let executing = false;
+
+    return {
+      get messages() {
+        return messages;
+      },
+      get pending() {
+        return pending;
+      },
+      get queued() {
+        return queued;
+      },
+      get isExecuting() {
+        return executing;
+      },
+
+      onExecutionStart() {
+        executing = true;
+      },
+
+      onExecutionEndDelta(entries: TimelineEntry[]) {
+        const newMessages = timelineToMessages(entries, new Map());
+        if (newMessages.length > 0) {
+          messages = [...messages, ...newMessages];
+          messageCount += newMessages.length;
+        }
+        executing = false;
+
+        // Only clear pending if it was confirmed in this execution's results.
+        // Queued messages become pending for the next execution.
+        if (queued.length > 0) {
+          pending = queued[0];
+          queued = queued.slice(1);
+        } else {
+          pending = null;
+        }
+      },
+
+      addUserMessage(text: string) {
+        const msg: ChatMessage = {
+          id: `pending-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          role: "user",
+          content: text,
+        };
+
+        if (executing) {
+          // During execution: queue the message, don't overwrite pending
+          queued = [...queued, msg];
+        } else {
+          pending = msg;
+        }
+      },
+
+      clear() {
+        messages = [];
+        pending = null;
+        queued = [];
+        messageCount = 0;
+        executing = false;
+      },
+    };
+  }
+
+  it("message submitted while idle becomes pending (baseline)", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("Hello");
+
+    expect(hook.pending).not.toBeNull();
+    expect(hook.pending!.content).toBe("Hello");
+    expect(hook.queued).toHaveLength(0);
+  });
+
+  it("message submitted during execution goes to queue, not pending", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("First");
+    hook.onExecutionStart();
+
+    // User types another message while model is thinking
+    hook.addUserMessage("Second");
+
+    // "First" is still the pending (optimistic) message
+    expect(hook.pending!.content).toBe("First");
+    // "Second" is queued — not yet sent, waiting for execution to end
+    expect(hook.queued).toHaveLength(1);
+    expect(hook.queued[0].content).toBe("Second");
+  });
+
+  it("queued message survives execution_end and becomes pending", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("First");
+    hook.onExecutionStart();
+    hook.addUserMessage("Follow up");
+
+    // Execution completes — "First" is confirmed in the timeline
+    hook.onExecutionEndDelta([
+      makeTimelineEntry({ role: "user", content: [textBlock("First")], id: "u1" }),
+      makeTimelineEntry({ role: "assistant", content: [textBlock("Response")], id: "a1" }),
+    ]);
+
+    // "Follow up" should now be the pending message, not wiped
+    expect(hook.pending).not.toBeNull();
+    expect(hook.pending!.content).toBe("Follow up");
+    expect(hook.queued).toHaveLength(0);
+    expect(hook.messages).toHaveLength(2);
+  });
+
+  it("multiple queued messages drain one at a time", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("Q1");
+    hook.onExecutionStart();
+    hook.addUserMessage("Q2");
+    hook.addUserMessage("Q3");
+
+    expect(hook.queued).toHaveLength(2);
+
+    // First execution ends
+    hook.onExecutionEndDelta([
+      makeTimelineEntry({ role: "user", content: [textBlock("Q1")], id: "u1" }),
+      makeTimelineEntry({ role: "assistant", content: [textBlock("A1")], id: "a1" }),
+    ]);
+
+    // Q2 becomes pending, Q3 still queued
+    expect(hook.pending!.content).toBe("Q2");
+    expect(hook.queued).toHaveLength(1);
+    expect(hook.queued[0].content).toBe("Q3");
+
+    // Second execution runs and ends
+    hook.onExecutionStart();
+    hook.onExecutionEndDelta([
+      makeTimelineEntry({ role: "user", content: [textBlock("Q2")], id: "u2" }),
+      makeTimelineEntry({ role: "assistant", content: [textBlock("A2")], id: "a2" }),
+    ]);
+
+    // Q3 becomes pending
+    expect(hook.pending!.content).toBe("Q3");
+    expect(hook.queued).toHaveLength(0);
+
+    // Third execution runs and ends
+    hook.onExecutionStart();
+    hook.onExecutionEndDelta([
+      makeTimelineEntry({ role: "user", content: [textBlock("Q3")], id: "u3" }),
+      makeTimelineEntry({ role: "assistant", content: [textBlock("A3")], id: "a3" }),
+    ]);
+
+    // All done
+    expect(hook.pending).toBeNull();
+    expect(hook.queued).toHaveLength(0);
+    expect(hook.messages).toHaveLength(6);
+  });
+
+  it("no queued messages — pending clears normally on execution end", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("Hello");
+    hook.onExecutionStart();
+
+    hook.onExecutionEndDelta([
+      makeTimelineEntry({ role: "user", content: [textBlock("Hello")], id: "u1" }),
+      makeTimelineEntry({ role: "assistant", content: [textBlock("Hi!")], id: "a1" }),
+    ]);
+
+    expect(hook.pending).toBeNull();
+    expect(hook.queued).toHaveLength(0);
+  });
+
+  it("clear wipes queued messages too", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("Q1");
+    hook.onExecutionStart();
+    hook.addUserMessage("Q2");
+    hook.addUserMessage("Q3");
+
+    hook.clear();
+
+    expect(hook.messages).toHaveLength(0);
+    expect(hook.pending).toBeNull();
+    expect(hook.queued).toHaveLength(0);
+    expect(hook.isExecuting).toBe(false);
+  });
+
+  it("queued messages are visible to the UI while waiting", () => {
+    const hook = createExecutionAwareHook();
+
+    hook.addUserMessage("Working on it");
+    hook.onExecutionStart();
+
+    hook.addUserMessage("Also check the tests");
+    hook.addUserMessage("And update the README");
+
+    // UI should be able to show all three states:
+    // 1. pending = "Working on it" (currently being processed)
+    // 2. queued[0] = "Also check the tests" (waiting)
+    // 3. queued[1] = "And update the README" (waiting)
+    expect(hook.pending!.content).toBe("Working on it");
+    expect(hook.queued).toHaveLength(2);
+    expect(hook.queued.map((q) => q.content)).toEqual([
+      "Also check the tests",
+      "And update the README",
+    ]);
+  });
+});
