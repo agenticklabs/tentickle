@@ -64,7 +64,7 @@ function ConfirmHints() {
         N
       </Text>
       <Text color="gray"> reject | </Text>
-      <Text bold color="cyan">
+      <Text bold color="#34d399">
         A
       </Text>
       <Text color="gray"> always</Text>
@@ -108,7 +108,7 @@ export function Footer({
     <Box flexDirection="row" paddingX={1} justifyContent="space-between">
       {hints}
       <Text>
-        <Text bold color="cyan">
+        <Text bold color="#34d399">
           tentickle
         </Text>
         <Text color="gray"> | </Text>

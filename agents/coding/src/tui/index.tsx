@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { useSession, useEvents, useContextInfo } from "@agentick/react";
 import {
@@ -7,46 +7,26 @@ import {
   InputBar,
   ToolCallIndicator,
   Spinner,
+  useSlashCommands,
+  useCommandsConfig,
+  helpCommand,
+  clearCommand,
+  exitCommand,
+  loadCommand,
+  renderMessage,
 } from "@agentick/tui";
 import type { TUIComponent } from "@agentick/tui";
-import type { ChatMode, ChatMessage } from "./types.js";
+import { extractText } from "@agentick/shared";
+import type { ChatMode } from "./types.js";
 import { Footer } from "./components/Footer.js";
 import { printBanner } from "./components/Banner.js";
 import { useMessageHistory } from "./hooks/useMessageHistory.js";
 import { useDoubleCtrlC } from "./hooks/useDoubleCtrlC.js";
 
-// ANSI helpers for console.log output
-const ansi = {
-  reset: "\x1b[0m",
-  bold: "\x1b[1m",
-  dim: "\x1b[2m",
-  blue: "\x1b[34m",
-  magenta: "\x1b[35m",
-  gray: "\x1b[90m",
-};
-
 const EXEC_EVENT_FILTER: Array<"execution_start" | "execution_end"> = [
   "execution_start",
   "execution_end",
 ];
-
-function printMessage(msg: ChatMessage): void {
-  const color = msg.role === "user" ? ansi.blue : ansi.magenta;
-  const label = msg.role === "user" ? "you" : "assistant";
-  console.log(`${color}${ansi.bold}${label}${ansi.reset}`);
-  console.log(`  ${msg.content}`);
-
-  if (msg.toolCalls && msg.toolCalls.length > 0) {
-    for (const tc of msg.toolCalls) {
-      const dur =
-        tc.duration != null
-          ? ` (${tc.duration < 1000 ? `${tc.duration}ms` : `${(tc.duration / 1000).toFixed(1)}s`})`
-          : "";
-      console.log(`  ${ansi.dim}+ ${tc.name}${dur}${ansi.reset}`);
-    }
-  }
-  console.log(); // blank line between messages
-}
 
 interface ToolConfirmationState {
   request: {
@@ -90,7 +70,10 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
     const newMessages = messages.slice(loggedCount.current);
     for (const msg of newMessages) {
-      printMessage(msg);
+      console.log(
+        renderMessage({ role: msg.role, content: msg.content, toolCalls: msg.toolCalls }),
+      );
+      console.log(); // blank line between messages
     }
     loggedCount.current = messages.length;
   }, [messages]);
@@ -117,17 +100,28 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     );
   }, [accessor]);
 
-  const handleSubmit = useCallback(
-    (text: string) => {
-      if (text === "/exit" || text === "/quit") {
-        exit();
-        return;
-      }
-      if (text === "/clear") {
+  const configCommands = useCommandsConfig();
+  const commandCtx = useMemo(
+    () => ({ sessionId, send, abort, output: console.log }),
+    [sessionId, send, abort],
+  );
+  const { dispatch } = useSlashCommands(
+    [
+      ...configCommands,
+      helpCommand(),
+      clearCommand(() => {
         clearMessages();
         loggedCount.current = 0;
-        return;
-      }
+      }),
+      exitCommand(exit),
+      loadCommand(),
+    ],
+    commandCtx,
+  );
+
+  const handleSubmit = useCallback(
+    (text: string) => {
+      if (dispatch(text)) return;
 
       setError(null);
       addUserMessage(text);
@@ -145,7 +139,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
         setError(err instanceof Error ? err : String(err));
       }
     },
-    [send, exit, addUserMessage, clearMessages],
+    [dispatch, send, addUserMessage],
   );
 
   const handleToolConfirmationResponse = useCallback(
@@ -177,19 +171,16 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     }
   });
 
-  const isInputActive = chatMode === "idle";
+  // const isInputActive = chatMode === "idle";
 
   return (
     <Box flexDirection="column">
       {/* Pending user message (optimistic, before server confirms) */}
       {pending && (
         <Box flexDirection="column" marginBottom={1}>
-          <Text color="blue" bold>
-            you
+          <Text dimColor wrap="wrap">
+            {extractText(pending.content)}
           </Text>
-          <Box marginLeft={2}>
-            <Text wrap="wrap">{pending.content}</Text>
-          </Box>
         </Box>
       )}
 
@@ -214,11 +205,12 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
       {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
 
+      {/* TODO: Enable input during execution for steering messages (session.queue).
+          Long-running executions need user communication — inject messages mid-run. */}
       <InputBar
         value={inputValue}
         onChange={setInputValue}
         onSubmit={handleSubmit}
-        isDisabled={!isInputActive}
         placeholder={
           chatMode === "streaming"
             ? "Thinking..."

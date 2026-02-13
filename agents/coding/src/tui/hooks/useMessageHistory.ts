@@ -1,73 +1,17 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useEvents } from "@agentick/react";
-import type { ContentBlock, Message, StreamEvent } from "@agentick/shared";
-import type { ChatMessage, ToolCallEntry } from "../types.js";
-
-function extractText(content: ContentBlock[] | string): string {
-  if (typeof content === "string") return content;
-  return content
-    .filter((b): b is ContentBlock & { type: "text"; text: string } => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-}
-
-function extractToolCalls(content: ContentBlock[]): ToolCallEntry[] {
-  return content
-    .filter(
-      (b): b is ContentBlock & { type: "tool_use"; id: string; name: string } =>
-        b.type === "tool_use",
-    )
-    .map((b) => ({
-      id: b.id,
-      name: b.name,
-      status: "done" as const,
-    }));
-}
-
-type TimelineEntry = { kind?: string; message?: Message };
-
-function timelineToMessages(
-  entries: TimelineEntry[],
-  toolDurations: Map<string, number>,
-): ChatMessage[] {
-  return entries
-    .filter(
-      (entry) =>
-        entry.kind === "message" &&
-        entry.message &&
-        (entry.message.role === "user" || entry.message.role === "assistant"),
-    )
-    .map((entry, i) => {
-      const msg = entry.message!;
-      const content = Array.isArray(msg.content) ? msg.content : [];
-      const toolCalls = msg.role === "assistant" ? extractToolCalls(content) : undefined;
-
-      const toolCallsWithDurations = toolCalls?.map((tc) => ({
-        ...tc,
-        duration: toolDurations.get(tc.id),
-      }));
-
-      return {
-        id: msg.id ?? `msg-${i}`,
-        role: msg.role as "user" | "assistant",
-        content: extractText(msg.content),
-        toolCalls:
-          toolCallsWithDurations && toolCallsWithDurations.length > 0
-            ? toolCallsWithDurations
-            : undefined,
-      };
-    });
-}
+import type { ToolCallStartEvent, ToolResultEvent, ExecutionEndEvent } from "@agentick/shared";
+import type { ChatMessage } from "../types.js";
+import { timelineToMessages, type TimelineEntry } from "../message-transforms.js";
 
 /**
- * Flat message history — confirmed messages go straight to Static.
+ * Flat message history — confirmed messages go straight to scrollback.
  *
- * - `messages`: all confirmed messages (append-only). Fed to <Static> so they
- *   commit to terminal scrollback immediately. Never re-rendered, never flicker.
+ * - `messages`: all confirmed messages (append-only). Printed via console.log
+ *   so Ink commits them to terminal scrollback. Never re-rendered, never flicker.
  * - `pending`: optimistic user message in the dynamic area until confirmed.
  *
- * The dynamic area stays small (pending + streaming + input + footer) regardless
- * of how long responses are. Long responses live in scrollback, not dynamic area.
+ * Messages preserve raw content (string | ContentBlock[]) for per-type rendering.
  */
 export function useMessageHistory(sessionId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -85,30 +29,26 @@ export function useMessageHistory(sessionId: string) {
     if (!event) return;
 
     if (event.type === "tool_call_start") {
-      const e = event as StreamEvent & { callId?: string };
-      const id = e.callId ?? "unknown";
-      toolTimers.current.set(id, Date.now());
+      const e = event as ToolCallStartEvent;
+      toolTimers.current.set(e.callId, Date.now());
     }
 
     if (event.type === "tool_result") {
-      const e = event as StreamEvent & { callId?: string };
-      const id = e.callId ?? "unknown";
-      const startTime = toolTimers.current.get(id);
+      const e = event as ToolResultEvent;
+      const startTime = toolTimers.current.get(e.callId);
       if (startTime) {
-        toolDurations.current.set(id, Date.now() - startTime);
-        toolTimers.current.delete(id);
+        toolDurations.current.set(e.callId, Date.now() - startTime);
+        toolTimers.current.delete(e.callId);
       }
     }
 
     if (event.type === "execution_end") {
-      const execEnd = event as StreamEvent & {
-        newTimelineEntries?: TimelineEntry[];
-        output?: { timeline?: TimelineEntry[] };
-      };
+      const execEnd = event as ExecutionEndEvent;
 
       // Prefer delta (append) over full timeline (replace)
-      if (execEnd.newTimelineEntries && execEnd.newTimelineEntries.length > 0) {
-        const newMessages = timelineToMessages(execEnd.newTimelineEntries, toolDurations.current);
+      const delta = execEnd.newTimelineEntries as TimelineEntry[] | undefined;
+      if (delta && delta.length > 0) {
+        const newMessages = timelineToMessages(delta, toolDurations.current);
         if (newMessages.length > 0) {
           setMessages((prev) => [...prev, ...newMessages]);
           messageCount.current += newMessages.length;
@@ -119,7 +59,10 @@ export function useMessageHistory(sessionId: string) {
       }
 
       // Fallback: full timeline replace — extract only new messages
-      const timeline = execEnd.output?.timeline;
+      // NOTE: output.timeline is not typed in ExecutionEndEvent (output is `unknown`).
+      // This is a framework gap — should be typed upstream in @agentick/shared.
+      const output = execEnd.output as { timeline?: TimelineEntry[] } | undefined;
+      const timeline = output?.timeline;
       if (Array.isArray(timeline)) {
         const allMessages = timelineToMessages(timeline, toolDurations.current);
         const newMessages = allMessages.slice(messageCount.current);
@@ -133,6 +76,7 @@ export function useMessageHistory(sessionId: string) {
     }
   }, [event]);
 
+  // Will support attachments (images, files, etc.) — content becomes ContentBlock[]
   const addUserMessage = useCallback((content: string) => {
     setPending({
       id: `pending-${Date.now()}`,

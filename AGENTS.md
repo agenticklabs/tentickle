@@ -174,6 +174,20 @@ the model adapter, which expects `ModelInput.messages`.
 model is unset: `(this.ctx.getModel() ?? this.appOptions.model)`. JSX-rendered
 `<Model>` still takes precedence.
 
+### Gap 5: ExecutionEndEvent.output is untyped
+
+**Status:** Open
+**Description:** `ExecutionEndEvent.output` is typed as `unknown` in
+`@agentick/shared/streaming.ts`. In practice, session.ts sends the completed
+COMInput which has a `.timeline` property (array of timeline entries). The TUI
+hook needs `output.timeline` for the fallback path but must cast through
+`unknown`, losing type safety.
+**Desired:** `ExecutionEndEvent.output` should be a proper type (or generic)
+that includes `timeline?: TimelineEntry[]`. Alternatively, the delta path
+(`newTimelineEntries`) should be the only path and the fallback removed.
+**Action:** Fix the type in `@agentick/shared` and remove the cast in the
+TUI hook.
+
 ## Package Map
 
 | Package             | Purpose                    | Status |

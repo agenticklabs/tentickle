@@ -31,6 +31,13 @@ When you encounter a framework limitation:
 
 ## Code Standards
 
+**Beauty is the goal.** Code aesthetics and systems architecture are not
+afterthoughts — they bring us joy and we strive for them as the ultimate
+measure of quality. If something is ugly, it's wrong. If a type is misnamed,
+fix it. If a module boundary is awkward, redraw it. Pure functions should be
+extractable and testable. Naming should match the domain (wire format says
+`content`, so we say `content`). No "for now" compromises that become permanent.
+
 **No backwards compatibility.** No legacy code. No dead code paths. No
 deprecations. If something is wrong, fix it. If something is unused, delete it.
 Clean, direct, well-crafted code only.
@@ -43,6 +50,8 @@ Clean, direct, well-crafted code only.
   used once.
 - Comments only where logic is non-obvious. No doc comments on self-evident code.
 - Tests are mandatory for agent behaviors and tool handlers.
+- Pure functions belong in their own modules, not hidden inside hooks or
+  components. If you can test it without React, extract it.
 
 ## Monorepo Structure
 
