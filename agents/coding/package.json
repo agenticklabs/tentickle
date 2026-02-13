@@ -25,6 +25,7 @@
     "@agentick/core": "*",
     "@agentick/devtools": "*",
     "@agentick/openai": "*",
+    "@agentick/google": "*",
     "@agentick/react": "*",
     "@agentick/sandbox": "*",
     "@agentick/sandbox-local": "*",

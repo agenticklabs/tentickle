@@ -91,6 +91,9 @@ importers:
       '@agentick/devtools':
         specifier: link:../../../agentick/packages/devtools
         version: link:../../../agentick/packages/devtools
+      '@agentick/google':
+        specifier: link:../../../agentick/packages/adapters/google
+        version: link:../../../agentick/packages/adapters/google
       '@agentick/openai':
         specifier: link:../../../agentick/packages/adapters/openai
         version: link:../../../agentick/packages/adapters/openai
