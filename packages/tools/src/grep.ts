@@ -95,6 +95,7 @@ export const Grep = createTool({
   name: "grep",
   description:
     "Search file contents for a regex pattern. Returns matching lines with file paths and line numbers. Skips binary files, node_modules, and dotfiles.",
+  displaySummary: (input) => input.pattern,
   input: z.object({
     pattern: z.string().describe("Regex pattern to search for"),
     path: z.string().optional().describe("Subdirectory to search in (relative to workspace)"),

@@ -44,6 +44,7 @@ export const Glob = createTool({
   name: "glob",
   description:
     "Find files matching a glob pattern. Use ** for recursive matching, * for single-level. Skips node_modules and dotfiles.",
+  displaySummary: (input) => input.pattern,
   input: z.object({
     pattern: z.string().describe('Glob pattern (e.g. "**/*.ts", "src/**/*.tsx")'),
     path: z.string().optional().describe("Subdirectory to search in (relative to workspace)"),
