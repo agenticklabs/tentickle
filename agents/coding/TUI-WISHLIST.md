@@ -2,44 +2,15 @@
 
 Tracked issues, ideas, and aspirations for the tentickle terminal UI.
 
-## Critical: Alternate Screen Mode
+## ~~Critical: Alternate Screen Mode~~ (Dropped)
 
-**Problem**: Ink's inline mode can't handle a chat UI. The dynamic area height
-is unbounded — long streaming responses overwrite console.log scrollback above.
-Capping streaming height is a band-aid, not a fix.
+Dropped — the inline mode with console.log scrollback is the preferred approach.
 
-**Solution**: Switch to alternate screen buffer (`alternateScreen: true`, already
-supported in `createTUI`). This means:
+## ~~Ink `<Static>` — Broken or Misunderstood~~ (Resolved)
 
-- Own the full terminal. No scrollback pollution, no overwrite bugs.
-- Implement a scrollable message area within a fixed-height viewport.
-- Messages rendered within our viewport, not relying on terminal scrollback.
-- Input bar + footer pinned to the bottom (fixed position).
-- Streaming content fills the viewport, scrolls naturally.
-
-**Prior art**: Claude Code, Lazygit, btop — all use alternate screen with their
-own layout management. This is the standard pattern for serious TUIs.
-
-**Ink support**: Ink's `Box` supports `height`, `flexGrow`, `overflow`. Combined
-with alternate screen, we can build a fixed layout with a scrollable message
-pane. May need a scroll hook or use `ink-scrollbar`/custom.
-
-**Status**: Not started. Current inline mode works for short conversations.
-
-## Ink `<Static>` — Broken or Misunderstood
-
-We tried `<Static items={history}>` multiple times. Items never render visibly.
-Possible causes:
-
-- Push-to-bottom (`\n.repeat(rows)`) interferes with Static's positioning
-- Static renders items above Ink's managed area, but they end up in the
-  newline padding zone (invisible, scrolled past top)
-- Static has a bug with items added after initial render in certain configs
-
-**TODO**: Build an isolated Ink test app (no agentick, no hooks) that just uses
-Static with a button to add items. Verify Static works at all in our setup.
-If it does, the issue is in our integration. If not, it's an Ink bug or
-incompatibility with our terminal/push-to-bottom approach.
+No longer relevant — CodingTUI uses `console.log` + `renderMessage` for scrollback
+output, bypassing `<Static>` entirely. The framework's `MessageList` still uses it
+for the default `Chat` component.
 
 ## Banner Art
 
@@ -85,15 +56,15 @@ CLI.
 
 - **Multi-line input**: Support Shift+Enter or similar for multi-line messages.
   Current `ink-text-input` is single-line only.
-- **History**: Up/down arrow to recall previous messages.
+- **History**: Up/down arrow to recall previous messages. ✅ Done — built into `useLineEditor`.
 - **Slash commands**: `/clear`, `/exit`, `/model`, `/help` — currently only
   `/clear` and `/exit`/`/quit` are implemented.
 
 ## Status Bar / Footer
 
-- **Compact mode**: Single-line footer combining hints + status.
+- **Compact mode**: Single-line footer combining hints + status. ✅ Done — `@agentick/tui` StatusBar system with composable widgets.
 - **Cost tracking**: Show estimated cost ($) alongside token count.
-- **Tick count**: Show current execution tick (for multi-tool-call runs).
+- **Tick count**: Show current execution tick (for multi-tool-call runs). ✅ Done — `<TickCount>` widget in `@agentick/tui`.
 
 ## Tool Call Display
 
@@ -108,3 +79,15 @@ CLI.
 - **Search**: Ctrl+F to search through message history.
 - **Theme**: Configurable color scheme. Dark/light mode detection.
 - **Resize handling**: Graceful re-layout on terminal resize.
+
+## File Attachments and Selection
+
+- **Typeahead file selection**: List matched file paths below the input, possibly below the footer. Similar to the proposed slash commands UI. Type to filter and navigate with up and down to select an option.
+- **Multi-modal attachment support**.
+
+## Input Enhancements and Bug Fixes
+
+- **Trigger character utility**: Create a utility to abstract the concept of trigger characters that initiate actions (e.g., `@` for file picker, `/` for slash commands).
+- **Multi-line input (Shift+Enter)**: Support adding newlines in the input field using the Shift + Enter key combination.
+- **Bug fix: Edit approval character**: Fix the bug where the approved edit character ends up in the input field after approving an edit. ✅ Fixed — added `isDisabled={chatMode !== "idle"}` to InputBar.
+- **Attachments**: You can paste images into the input field to attach them to the message.

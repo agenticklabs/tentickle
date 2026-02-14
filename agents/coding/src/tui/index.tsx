@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
-import { useSession, useContextInfo, useChat } from "@agentick/react";
+import { useSession, useChat } from "@agentick/react";
 import {
   ToolConfirmationPrompt,
   ErrorDisplay,
@@ -14,18 +14,19 @@ import {
   exitCommand,
   loadCommand,
   renderMessage,
+  useLineEditor,
+  useDoubleCtrlC,
+  handleConfirmationKey,
 } from "@agentick/tui";
 import type { TUIComponent } from "@agentick/tui";
 import { extractText } from "@agentick/shared";
 import type { Message } from "@agentick/shared";
 import { Footer } from "./components/Footer.js";
 import { printBanner } from "./components/Banner.js";
-import { useDoubleCtrlC } from "./hooks/useDoubleCtrlC.js";
 
 export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
   const { abort } = useSession({ sessionId, autoSubscribe: true });
-  const { contextInfo } = useContextInfo({ sessionId });
 
   const {
     submit,
@@ -37,10 +38,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     respondToConfirmation,
     clearMessages,
     lastSubmitted,
+    error: executionError,
   } = useChat({ sessionId, mode: "queue", flushMode: "sequential" });
-
-  const [error, setError] = useState<Error | string | null>(null);
-  const [inputValue, setInputValue] = useState("");
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
@@ -87,15 +86,16 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const handleSubmit = useCallback(
     (text: string) => {
       if (dispatch(text)) return;
-
-      setError(null);
       submit(text);
     },
     [dispatch, submit],
   );
 
-  // Global keybindings
+  const editor = useLineEditor({ onSubmit: handleSubmit });
+
+  // Single centralized input handler — all keystrokes route through here
   useInput((input, key) => {
+    // Ctrl+C → always handled first
     if (key.ctrl && input === "c") {
       handleCtrlC(chatMode === "streaming", () => {
         abort();
@@ -103,11 +103,23 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       return;
     }
 
+    // Ctrl+L → clear screen
     if (key.ctrl && input === "l") {
       clearMessages();
       loggedCount.current = 0;
-      setInputValue("");
+      editor.clear();
       return;
+    }
+
+    // Tool confirmation → Y/N/A
+    if (chatMode === "confirming_tool" && toolConfirmation) {
+      handleConfirmationKey(input, respondToConfirmation);
+      return;
+    }
+
+    // Idle → route to editor
+    if (chatMode === "idle") {
+      editor.handleInput(input, key);
     }
   });
 
@@ -148,18 +160,15 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       )}
 
       {chatMode === "confirming_tool" && toolConfirmation && (
-        <ToolConfirmationPrompt
-          request={toolConfirmation.request}
-          onRespond={respondToConfirmation}
-        />
+        <ToolConfirmationPrompt request={toolConfirmation.request} />
       )}
 
-      {error && <ErrorDisplay error={error} onDismiss={() => setError(null)} />}
+      {executionError && <ErrorDisplay error={executionError.message} />}
 
       <InputBar
-        value={inputValue}
-        onChange={setInputValue}
-        onSubmit={handleSubmit}
+        value={editor.value}
+        cursor={editor.cursor}
+        isActive={chatMode === "idle"}
         placeholder={
           chatMode === "streaming"
             ? "Thinking..."
@@ -169,7 +178,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
         }
       />
 
-      <Footer chatMode={chatMode} contextInfo={contextInfo} showExitHint={showExitHint} />
+      <Footer chatMode={chatMode} sessionId={sessionId} showExitHint={showExitHint} />
     </Box>
   );
 };
