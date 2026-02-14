@@ -5,6 +5,7 @@ import {
   ToolConfirmationPrompt,
   ErrorDisplay,
   InputBar,
+  CompletionPicker,
   ToolCallIndicator,
   Spinner,
   useSlashCommands,
@@ -13,6 +14,7 @@ import {
   clearCommand,
   exitCommand,
   loadCommand,
+  createCommandCompletionSource,
   renderMessage,
   useLineEditor,
   useDoubleCtrlC,
@@ -66,10 +68,10 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   const configCommands = useCommandsConfig();
   const commandCtx = useMemo(
-    () => ({ sessionId, send: submit as any, abort, output: console.log }),
+    () => ({ sessionId, send: (text: string) => submit(text), abort, output: console.log }),
     [sessionId, submit, abort],
   );
-  const { dispatch } = useSlashCommands(
+  const { dispatch, commands } = useSlashCommands(
     [
       ...configCommands,
       helpCommand(),
@@ -93,13 +95,22 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   const editor = useLineEditor({ onSubmit: handleSubmit });
 
+  // Register "/" command completion source
+  useEffect(() => {
+    return editor.editor.registerCompletion(createCommandCompletionSource(commands));
+  }, [editor.editor, commands]);
+
   // Single centralized input handler — all keystrokes route through here
   useInput((input, key) => {
     // Ctrl+C → always handled first
     if (key.ctrl && input === "c") {
-      handleCtrlC(chatMode === "streaming", () => {
-        abort();
-      });
+      if (chatMode === "confirming_tool" && toolConfirmation) {
+        respondToConfirmation({ approved: false, reason: "cancelled by user" });
+      } else {
+        handleCtrlC(chatMode === "streaming", () => {
+          abort();
+        });
+      }
       return;
     }
 
@@ -164,6 +175,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       )}
 
       {executionError && <ErrorDisplay error={executionError.message} />}
+
+      {editor.completion && <CompletionPicker completion={editor.completion} />}
 
       <InputBar
         value={editor.value}
