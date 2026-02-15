@@ -67,6 +67,14 @@ tentickle/
 └── CONTRIBUTING.md     # Development conventions
 ```
 
+## Shared Package First
+
+Before writing ANY utility function, **always check `@agentick/shared` first**.
+It is the canonical home for cross-framework utilities: `extractText`,
+`isTextBlock`, block type guards, content helpers, wire types. If a utility
+will be used across multiple packages, it belongs in shared — not duplicated.
+When in doubt, grep `../agentick/packages/shared/src/` before creating.
+
 ## Key Dependencies
 
 From `@agentick/sandbox`: `Shell`, `ReadFile`, `WriteFile`, `EditFile`, `<Sandbox>`,

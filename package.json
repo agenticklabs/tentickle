@@ -41,6 +41,9 @@
     "version-packages": "changeset version",
     "publish-packages": "turbo run test build && changeset publish"
   },
+  "dependencies": {
+    "grammy": "^1.40.0"
+  },
   "devDependencies": {
     "@changesets/cli": "^2.0.0",
     "@commitlint/cli": "^20.4.1",
@@ -54,6 +57,7 @@
     "oxfmt": "^0.28.0",
     "oxlint": "^1.43.0",
     "simple-git-hooks": "^2.13.1",
+    "tsx": "^4.19.0",
     "turbo": "^2.8.3",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
@@ -80,6 +84,9 @@
       "@agentick/client": "link:../agentick/packages/client",
       "@agentick/openai": "link:../agentick/packages/adapters/openai",
       "@agentick/google": "link:../agentick/packages/adapters/google",
+      "@agentick/connector": "link:../agentick/packages/connector",
+      "@agentick/connector-telegram": "link:../agentick/packages/connector-telegram",
+      "@agentick/connector-imessage": "link:../agentick/packages/connector-imessage",
       "@agentick/devtools": "link:../agentick/packages/devtools",
       "react": "link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react",
       "react-reconciler": "0.31.0",
