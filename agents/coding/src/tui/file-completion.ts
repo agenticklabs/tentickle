@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import { resolve, dirname, basename, extname } from "node:path";
 import type { CompletionSource, CompletionItem } from "@agentick/client";
 import { SUPPORTED_EXTENSIONS, expandHome } from "./attach-file.js";
@@ -22,7 +22,8 @@ export function createFileCompletionSource(): CompletionSource {
       if (!value.startsWith(ATTACH_PREFIX) || cursor < ATTACH_PREFIX.length) return null;
       return { from: ATTACH_PREFIX.length, query: value.slice(ATTACH_PREFIX.length, cursor) };
     },
-    resolve({ query }) {
+    debounce: 80,
+    async resolve({ query }) {
       const rawPath = query.replace(/^['"]|['"]$/g, "");
       const resolved = resolve(expandHome(rawPath) || ".");
 
@@ -30,7 +31,7 @@ export function createFileCompletionSource(): CompletionSource {
       let filter: string;
 
       try {
-        if (statSync(resolved).isDirectory()) {
+        if ((await stat(resolved)).isDirectory()) {
           dir = resolved;
           filter = "";
         } else {
@@ -53,7 +54,7 @@ export function createFileCompletionSource(): CompletionSource {
       }
 
       try {
-        const entries = readdirSync(dir, { withFileTypes: true });
+        const entries = await readdir(dir, { withFileTypes: true });
         const items: CompletionItem[] = [];
 
         for (const entry of entries) {
