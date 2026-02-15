@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { useSession, useChat } from "@agentick/react";
 import {
@@ -25,6 +25,9 @@ import { extractText } from "@agentick/shared";
 import type { Message } from "@agentick/shared";
 import { Footer } from "./components/Footer.js";
 import { printBanner } from "./components/Banner.js";
+import { AttachmentStrip } from "./components/AttachmentStrip.js";
+import { attachCommand } from "./commands/attach.js";
+import { createFileCompletionSource } from "./file-completion.js";
 
 export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
@@ -41,11 +44,24 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     clearMessages,
     lastSubmitted,
     error: executionError,
+    attachments,
+    addAttachment,
+    removeAttachment,
   } = useChat({ sessionId, mode: "queue", flushMode: "sequential" });
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
   const loggedCount = useRef(0);
+  const [attachmentFocus, setAttachmentFocus] = useState<number | null>(null);
+
+  // Auto-clear focus when attachments change (e.g. last one removed)
+  useEffect(() => {
+    if (attachments.length === 0) {
+      setAttachmentFocus(null);
+    } else if (attachmentFocus !== null && attachmentFocus >= attachments.length) {
+      setAttachmentFocus(attachments.length - 1);
+    }
+  }, [attachments.length, attachmentFocus]);
 
   // Print banner to scrollback on mount
   useEffect(() => {
@@ -58,6 +74,16 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
     const newMessages = messages.slice(loggedCount.current);
     for (const msg of newMessages) {
+      // Show attachment tags above user text
+      if (msg.role === "user" && Array.isArray(msg.content)) {
+        const mediaNames = msg.content
+          .filter((b) => b.type === "image" || b.type === "document")
+          .map((b) => `[${b.type === "document" && "title" in b ? b.title : "image"}]`);
+        if (mediaNames.length > 0) {
+          console.log(`  ${mediaNames.join(" ")}`);
+        }
+      }
+
       console.log(
         renderMessage({ role: msg.role, content: msg.content, toolCalls: msg.toolCalls }),
       );
@@ -81,6 +107,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       }),
       exitCommand(exit),
       loadCommand(),
+      attachCommand(addAttachment),
     ],
     commandCtx,
   );
@@ -95,10 +122,14 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   const editor = useLineEditor({ onSubmit: handleSubmit });
 
-  // Register "/" command completion source
+  // Register completion sources: slash commands + file paths for /attach
   useEffect(() => {
     return editor.editor.registerCompletion(createCommandCompletionSource(commands));
   }, [editor.editor, commands]);
+
+  useEffect(() => {
+    return editor.editor.registerCompletion(createFileCompletionSource());
+  }, [editor.editor]);
 
   // Single centralized input handler — all keystrokes route through here
   useInput((input, key) => {
@@ -128,8 +159,41 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       return;
     }
 
-    // Idle → route to editor
+    // Idle mode input routing
     if (chatMode === "idle") {
+      // Attachment focus mode
+      if (attachmentFocus !== null) {
+        if (key.leftArrow) {
+          setAttachmentFocus(Math.max(0, attachmentFocus - 1));
+          return;
+        }
+        if (key.rightArrow) {
+          setAttachmentFocus(Math.min(attachments.length - 1, attachmentFocus + 1));
+          return;
+        }
+        if (key.backspace || key.delete) {
+          removeAttachment(attachments[attachmentFocus].id);
+          return;
+        }
+        if (key.downArrow || key.escape) {
+          setAttachmentFocus(null);
+          return;
+        }
+        // Printable char → exit focus, route to editor
+        if (!key.ctrl && !key.meta && input && !key.return) {
+          setAttachmentFocus(null);
+          editor.handleInput(input, key);
+          return;
+        }
+        return;
+      }
+
+      // ↑ with empty input and attachments → enter attachment focus
+      if (key.upArrow && editor.value === "" && attachments.length > 0) {
+        setAttachmentFocus(attachments.length - 1);
+        return;
+      }
+
       editor.handleInput(input, key);
     }
   });
@@ -177,6 +241,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       {executionError && <ErrorDisplay error={executionError.message} />}
 
       {editor.completion && <CompletionPicker completion={editor.completion} />}
+
+      <AttachmentStrip attachments={attachments} focusIndex={attachmentFocus} />
 
       <InputBar
         value={editor.value}
