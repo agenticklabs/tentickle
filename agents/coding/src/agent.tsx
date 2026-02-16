@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
-import { System, Section, Timeline } from "@agentick/core";
+import { System, Section, Timeline, createTool } from "@agentick/core";
 import { Sandbox, SandboxTools, useSandbox } from "@agentick/sandbox";
 import { localProvider } from "@agentick/sandbox-local";
 import { Glob, Grep } from "@tentickle/tools";
 import { useContinuation } from "@agentick/core";
+import { z } from "zod";
+import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
 import { mkdirSync } from "node:fs";
 import { DynamicModel } from "./model.js";
@@ -11,19 +13,26 @@ import { createTaskTool } from "./tools/task-list.js";
 import { createSpawnTool } from "./tools/spawn.js";
 import { createExploreTool } from "./tools/explore.js";
 import { getMemoryDir, getMemoryPath } from "./memory-path.js";
-import { bindSandbox } from "./sandbox-ref.js";
 import { TaskStore, bindTaskStore } from "./task-store.js";
 
 const SpawnTool = createSpawnTool(CodingAgent);
 const ExploreTool = createExploreTool(CodingAgent);
 
-function SandboxBridge() {
-  const sandbox = useSandbox();
-  useEffect(() => {
-    bindSandbox(sandbox);
-  }, [sandbox]);
-  return null;
-}
+const AddDirCommand = createTool({
+  name: "add-dir",
+  description: "Mount a directory into the sandbox",
+  input: z.object({ path: z.string().describe("Directory path to mount") }),
+  commandOnly: true,
+  aliases: ["mount"],
+  use() {
+    return { sandbox: useSandbox() };
+  },
+  handler: async ({ path: dirPath }, deps) => {
+    const resolved = resolve(dirPath.trim());
+    await deps!.sandbox.addMount({ host: resolved, sandbox: resolved, mode: "rw" });
+    return [{ type: "text" as const, text: `Mounted: ${resolved}` }];
+  },
+});
 
 function TaskStoreBridge({ store }: { store: TaskStore }) {
   useEffect(() => {
@@ -76,7 +85,7 @@ export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
       workspace={workspace}
       mounts={[{ host: memoryDir, sandbox: memoryDir, mode: "rw" }]}
     >
-      <SandboxBridge />
+      <AddDirCommand />
       <TaskStoreBridge store={taskStore} />
       <DynamicModel />
       <System>

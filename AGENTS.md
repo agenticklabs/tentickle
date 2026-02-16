@@ -188,6 +188,26 @@ that includes `timeline?: TimelineEntry[]`. Alternatively, the delta path
 **Action:** Fix the type in `@agentick/shared` and remove the cast in the
 TUI hook.
 
+### Gap 6: commandOnly tools don't bridge to TUI slash commands
+
+**Status:** Open
+**Description:** `commandOnly` tools (registered in the JSX tree via
+`createTool({ commandOnly: true })`) and TUI `SlashCommand`s duplicate metadata
+— name, description, aliases. A commandOnly tool like `add-dir` must be defined
+as a `createTool` in the agent AND separately wired as a slash command in the
+TUI, with the TUI handler calling `accessor.dispatchCommand()`. The shapes are
+close but not identical: SlashCommands take raw `args: string`, tools take
+structured `input: ZodSchema`.
+**Desired:** A `useCommandOnlyTools({ accessor })` hook in `@agentick/tui` that
+introspects the session's commandOnly tools and auto-generates `SlashCommand`
+entries from them. The bridge would: query session for commandOnly tool metadata,
+generate SlashCommands where handler calls `dispatchCommand`, parse `args` string
+using the tool's Zod schema, and format `ContentBlock[]` results via `extractText`.
+**Note:** Client-only commands like `attach` (pure TUI state manipulation) are
+correctly NOT commandOnly tools — they stay as plain SlashCommands.
+**Action:** Build the bridge hook in `@agentick/tui`, prove with tentickle's
+`add-dir` command, then generalize.
+
 ## Package Map
 
 | Package             | Purpose                    | Status |

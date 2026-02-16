@@ -29,7 +29,6 @@ import { printBanner } from "./components/Banner.js";
 import { AttachmentStrip } from "./components/AttachmentStrip.js";
 import { TaskList } from "./components/TaskList.js";
 import { attachCommand } from "./commands/attach.js";
-import { addDirCommand } from "./commands/add-dir.js";
 import { createFileCompletionSource, createDirCompletionSource } from "./file-completion.js";
 import { getMemoryDir } from "../memory-path.js";
 
@@ -45,7 +44,7 @@ const confirmationPolicy: ConfirmationPolicy = (req) => {
 
 export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
-  const { abort } = useSession({ sessionId, autoSubscribe: true });
+  const { abort, accessor } = useSession({ sessionId, autoSubscribe: true });
 
   const {
     submit,
@@ -122,7 +121,29 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       exitCommand(exit),
       loadCommand(),
       attachCommand(addAttachment),
-      addDirCommand(),
+      {
+        name: "add-dir",
+        description: "Mount a directory into the sandbox",
+        aliases: ["mount"],
+        args: "<path>",
+        handler: async (args: string, ctx: { output: (text: string) => void }) => {
+          const input = args.trim();
+          if (!input) {
+            ctx.output("Usage: /add-dir <path>");
+            return;
+          }
+          if (!accessor) {
+            ctx.output("Session not ready.");
+            return;
+          }
+          try {
+            const result = await accessor.dispatchCommand("add-dir", { path: input });
+            ctx.output(extractText(result));
+          } catch (err: any) {
+            ctx.output(`Failed: ${err.message}`);
+          }
+        },
+      },
     ],
     commandCtx,
   );
