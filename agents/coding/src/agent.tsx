@@ -1,45 +1,94 @@
-import React from "react";
-import { System, Timeline } from "@agentick/core";
-import { Sandbox, SandboxTools } from "@agentick/sandbox";
+import { useState, useEffect } from "react";
+import { System, Section, Timeline } from "@agentick/core";
+import { Sandbox, SandboxTools, useSandbox } from "@agentick/sandbox";
 import { localProvider } from "@agentick/sandbox-local";
 import { Glob, Grep } from "@tentickle/tools";
 import { useContinuation } from "@agentick/core";
+import { readFile } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
 import { DynamicModel } from "./model.js";
+import { TaskTool } from "./tools/task-list.js";
+import { getMemoryDir, getMemoryPath } from "./memory-path.js";
+import { bindSandbox } from "./sandbox-ref.js";
+import { taskStore } from "./task-store.js";
+
+function SandboxBridge() {
+   const sandbox = useSandbox();
+   useEffect(() => { bindSandbox(sandbox); }, [sandbox]);
+   return null;
+}
+
+function Memory() {
+   const sandbox = useSandbox();
+   const [content, setContent] = useState<string | null>(null);
+
+   useEffect(() => {
+      const path = getMemoryPath(sandbox.workspacePath);
+      readFile(path, "utf-8").then(setContent).catch(() => setContent(null));
+   }, [sandbox]);
+
+   if (!content) return null;
+   return (
+      <Section id="memory" title="Project Memory">
+         {content}
+      </Section>
+   );
+}
 
 export type CodingAgentProps = {
-  workspace?: string;
+   workspace?: string;
 };
 
 export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
-  useContinuation((result) => {
-    if (result.tick >= 30) return false;
-  });
+   const memoryDir = getMemoryDir(workspace);
+   const memoryFile = `${memoryDir}/MEMORY.md`;
+   mkdirSync(memoryDir, { recursive: true });
 
-  return (
-    <Sandbox provider={localProvider()} workspace={workspace}>
-      <DynamicModel />
-      <System>
-        You are an expert software engineer. You work autonomously to complete coding tasks. ##
-        Environment Your working directory is: {workspace}
-        All file paths are relative to this directory. Use `glob` and `grep` to explore, `read_file`
-        to read, `edit_file` for surgical edits, `write_file` for new files, and `shell` to run
-        commands. ## How You Work 1. **Orient first.** Run `glob` with pattern `**/*` (or a narrower
-        pattern) to see the project structure. Read key files (package.json, README, etc.) to
-        understand the codebase. 2. **Read before editing.** Always read a file before modifying it.
-        Use `grep` to find specific code patterns. 3. **Plan before you act.** For non-trivial
-        changes, state your approach before editing. 4. **Make precise changes.** Use `edit_file`
-        for surgical edits. Use `write_file` only for new files or complete rewrites. 5. **Verify
-        your work.** After making changes, run tests or type checks if available via `shell`. 6.
-        **Stay focused.** Complete the requested task. Don't refactor unrelated code or add
-        unrequested features. ## Principles - Read the file before editing it. Always. - Prefer
-        small, targeted edits over full file rewrites. - When you're unsure about the codebase
-        structure, search first. - If a task is ambiguous, state your interpretation and proceed.
-        Don't stall. - If you hit an error, diagnose it. Don't retry the same thing.
-      </System>
-      <Timeline />
-      <SandboxTools />
-      <Glob />
-      <Grep />
-    </Sandbox>
-  );
+   useContinuation((result) => {
+      if (result.tick >= 50) return false;
+      const tasks = taskStore.list();
+      if (tasks.length > 0 && taskStore.hasIncomplete()) return true;
+   });
+
+   return (
+      <Sandbox
+         provider={localProvider()}
+         workspace={workspace}
+         mounts={[{ host: memoryDir, sandbox: memoryDir, mode: "rw" }]}
+      >
+         <SandboxBridge />
+         <DynamicModel />
+         <System>
+            You are a coding agent working in: {workspace}
+
+            Default to action. When you can find out by reading, don't ask.
+            When you can solve by doing, don't discuss. Use your tools — `glob`,
+            `grep`, `read_file`, `shell` — to answer your own questions. Write
+            files with `write_file` and `edit_file`, not as text in your response.
+            Your text output is for the user: brief status, results, decisions.
+
+            Be proactive. Explore the codebase before being told to. Document
+            what you discover in `{memoryFile}` so you remember it next time.
+            If "Project Memory" appears below, you already know this project.
+            If not, orient immediately: `glob` the structure, read key files
+            (`package.json`, `README.md`, `CLAUDE.md`, `AGENTS.md`), then
+            `write_file` to `{memoryFile}` with what you learned.
+
+            Keep your memory current as you work: language, package manager,
+            build/test commands, project structure, conventions. Read before
+            editing. Verify changes with `shell`. If something fails, diagnose
+            the root cause — don't retry blindly.
+
+            For non-trivial work, use `task_list` with action `plan` to break
+            work into steps, then `start`/`complete` each task as you go.
+            Execution continues automatically while tasks are incomplete.
+         </System>
+         <Memory />
+         <Timeline />
+         <SandboxTools />
+         <Glob />
+         <Grep />
+         <TaskTool />
+      </Sandbox>
+   );
 }
