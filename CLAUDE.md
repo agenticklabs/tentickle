@@ -96,11 +96,15 @@ the sandbox's built-in tools.
 - **Hooks**: `useState`, `useEffect`, `useSignal`, `useOnMount`, `useOnTickEnd`,
   `useContinuation`, `useKnob`, `useData`, `useComState`, `useContextInfo`
 - **Tools**: `createTool` — dual-use (JSX component + `.run()` static). Tools
-  render state back into context via `render` function.
+  render state back into context via `render` function. `audience: "user"`
+  hides a tool from the model — dispatch via `session.dispatch(name, input)`.
+  `aliases` provide alternative dispatch names.
 - **Sandbox**: `<Sandbox>` wraps tools in a workspace. `useSandbox()` gives
   access to the sandbox handle. Tools are tree-scoped.
 - **Sessions**: Long-lived conversation contexts. `send()` creates executions.
-  Each model call is a tick. Multi-tick via tool use.
+  Each model call is a tick. Multi-tick via tool use. `mount()` mounts the
+  component tree without calling the model. `dispatch()` invokes tools
+  by name without model involvement — used by TUI slash commands.
 - **Adapters**: `openai()`, `google()`, `aiSdk()` — all return `ModelClass`.
 - **Testing**: `renderAgent`, `compileAgent`, `createTestAdapter`, mocks.
 - **TUI**: `@agentick/tui` — Ink-based terminal interface, local or remote.

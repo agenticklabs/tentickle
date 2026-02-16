@@ -22,7 +22,7 @@ const AddDirCommand = createTool({
   name: "add-dir",
   description: "Mount a directory into the sandbox",
   input: z.object({ path: z.string().describe("Directory path to mount") }),
-  commandOnly: true,
+  audience: "user",
   aliases: ["mount"],
   use() {
     return { sandbox: useSandbox() };

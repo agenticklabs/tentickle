@@ -137,7 +137,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
             return;
           }
           try {
-            const result = await accessor.dispatchCommand("add-dir", { path: input });
+            const result = await accessor.dispatch("add-dir", { path: input });
             ctx.output(extractText(result));
           } catch (err: any) {
             ctx.output(`Failed: ${err.message}`);
