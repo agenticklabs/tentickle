@@ -21,13 +21,27 @@ import {
   handleConfirmationKey,
 } from "@agentick/tui";
 import type { TUIComponent } from "@agentick/tui";
+import type { ConfirmationPolicy } from "@agentick/client";
 import { extractText } from "@agentick/shared";
 import type { Message } from "@agentick/shared";
 import { Footer } from "./components/Footer.js";
 import { printBanner } from "./components/Banner.js";
 import { AttachmentStrip } from "./components/AttachmentStrip.js";
+import { TaskList } from "./components/TaskList.js";
 import { attachCommand } from "./commands/attach.js";
+import { addDirCommand } from "./commands/add-dir.js";
 import { createFileCompletionSource } from "./file-completion.js";
+import { getMemoryDir } from "../memory-path.js";
+
+const confirmationPolicy: ConfirmationPolicy = (req) => {
+  if (req.name === "write_file" || req.name === "edit_file") {
+    const path = req.arguments.path as string | undefined;
+    if (path && path.startsWith(getMemoryDir(process.cwd()))) {
+      return { action: "approve" };
+    }
+  }
+  return { action: "prompt" };
+};
 
 export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
@@ -47,7 +61,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     attachments,
     addAttachment,
     removeAttachment,
-  } = useChat({ sessionId, mode: "queue", flushMode: "sequential" });
+  } = useChat({ sessionId, mode: "queue", flushMode: "sequential", confirmationPolicy });
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
@@ -108,6 +122,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       exitCommand(exit),
       loadCommand(),
       attachCommand(addAttachment),
+      addDirCommand(),
     ],
     commandCtx,
   );
@@ -133,15 +148,17 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   // Single centralized input handler — all keystrokes route through here
   useInput((input, key) => {
-    // Ctrl+C → always handled first
+    // Esc → abort execution
+    if (key.escape && isExecuting) {
+      abort();
+      return;
+    }
+
+    // Ctrl+C → double-press to exit; also aborts if executing
     if (key.ctrl && input === "c") {
-      if (chatMode === "confirming_tool" && toolConfirmation) {
-        respondToConfirmation({ approved: false, reason: "cancelled by user" });
-      } else {
-        handleCtrlC(chatMode === "streaming", () => {
-          abort();
-        });
-      }
+      if (isExecuting) abort();
+      // isStreaming=false: onAbort is never called, double-press logic only
+      handleCtrlC(false, abort);
       return;
     }
 
@@ -241,6 +258,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       {executionError && <ErrorDisplay error={executionError.message} />}
 
       {editor.completion && <CompletionPicker completion={editor.completion} />}
+
+      <TaskList />
 
       <AttachmentStrip attachments={attachments} focusIndex={attachmentFocus} />
 
