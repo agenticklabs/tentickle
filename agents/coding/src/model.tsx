@@ -20,7 +20,7 @@ export function DynamicModel() {
   );
   const googleModelName = useComState<string>(
     "googleModel",
-    process.env["GOOGLE_MODEL"] || "gemini-2.0-flash",
+    process.env["GOOGLE_MODEL"] || "gemini-2.5-flash",
   );
 
   const model = useComputed(() => {
