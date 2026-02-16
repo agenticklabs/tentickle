@@ -6,7 +6,7 @@ export interface Task {
   status: "pending" | "in_progress" | "completed";
 }
 
-class TaskStore extends EventEmitter {
+export class TaskStore extends EventEmitter {
   private tasks = new Map<number, Task>();
   private nextId = 1;
 
@@ -49,4 +49,13 @@ class TaskStore extends EventEmitter {
   }
 }
 
-export const taskStore = new TaskStore();
+// Global ref for TUI bridge (parent agent binds, TUI reads)
+let _taskStore: TaskStore | null = null;
+
+export function bindTaskStore(store: TaskStore): void {
+  _taskStore = store;
+}
+
+export function getTaskStore(): TaskStore | null {
+  return _taskStore;
+}

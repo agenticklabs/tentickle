@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { taskStore, type Task } from "../../task-store.js";
+import { getTaskStore, type Task } from "../../task-store.js";
 
 const STATUS_CONFIG: Record<Task["status"], { icon: string; color: string }> = {
   pending: { icon: "○", color: "gray" },
@@ -9,15 +9,18 @@ const STATUS_CONFIG: Record<Task["status"], { icon: string; color: string }> = {
 };
 
 export function TaskList() {
-  const [tasks, setTasks] = useState<Task[]>(taskStore.list());
+  const store = getTaskStore();
+  const [tasks, setTasks] = useState<Task[]>(store?.list() ?? []);
 
   useEffect(() => {
-    const onChange = () => setTasks(taskStore.list());
-    taskStore.on("change", onChange);
+    if (!store) return;
+    setTasks(store.list());
+    const onChange = () => setTasks(store.list());
+    store.on("change", onChange);
     return () => {
-      taskStore.off("change", onChange);
+      store.off("change", onChange);
     };
-  }, []);
+  }, [store]);
 
   if (tasks.length === 0) return null;
 

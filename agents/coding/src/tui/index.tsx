@@ -30,7 +30,7 @@ import { AttachmentStrip } from "./components/AttachmentStrip.js";
 import { TaskList } from "./components/TaskList.js";
 import { attachCommand } from "./commands/attach.js";
 import { addDirCommand } from "./commands/add-dir.js";
-import { createFileCompletionSource } from "./file-completion.js";
+import { createFileCompletionSource, createDirCompletionSource } from "./file-completion.js";
 import { getMemoryDir } from "../memory-path.js";
 
 const confirmationPolicy: ConfirmationPolicy = (req) => {
@@ -137,13 +137,17 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   const editor = useLineEditor({ onSubmit: handleSubmit });
 
-  // Register completion sources: slash commands + file paths for /attach
+  // Register completion sources: slash commands, file paths, dir paths
   useEffect(() => {
     return editor.editor.registerCompletion(createCommandCompletionSource(commands));
   }, [editor.editor, commands]);
 
   useEffect(() => {
     return editor.editor.registerCompletion(createFileCompletionSource());
+  }, [editor.editor]);
+
+  useEffect(() => {
+    return editor.editor.registerCompletion(createDirCompletionSource());
   }, [editor.editor]);
 
   // Single centralized input handler — all keystrokes route through here
