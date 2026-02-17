@@ -21,7 +21,7 @@ try {
 
 const _devtools = startDevToolsServer();
 
-const app = createCodingApp({ devTools: true });
+const app = createCodingApp({ devTools: true, maxTicks: 250 });
 
 // Shared client for TUI + connectors
 const client = createClient({

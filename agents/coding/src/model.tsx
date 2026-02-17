@@ -1,8 +1,8 @@
-import React from "react";
 import { openai } from "@agentick/openai";
 import { google } from "@agentick/google";
 import { useComState, useComputed } from "@agentick/core";
 import { Model } from "@agentick/core";
+import { apple } from "@agentick/apple";
 
 // Parse Google credentials if provided
 const GOOGLE_CREDENTIALS = process.env["GCP_CREDENTIALS"]
@@ -10,10 +10,14 @@ const GOOGLE_CREDENTIALS = process.env["GCP_CREDENTIALS"]
   : undefined;
 
 /**
- * Dynamic model component that switches between OpenAI and Google based on config.
+ * Dynamic model component that switches between OpenAI, Google, and Apple Foundation Models.
+ *
+ * Set USE_APPLE_MODEL=true to use on-device Apple Foundation Models.
+ * Bridge binary is auto-compiled by @agentick/apple's postinstall.
  */
 export function DynamicModel() {
   const useGoogle = useComState<boolean>("useGoogle", process.env["USE_GOOGLE_MODEL"] === "true");
+  const useApple = useComState<boolean>("useApple", process.env["USE_APPLE_MODEL"] === "true");
   const openaiModelName = useComState<string>(
     "openaiModel",
     process.env["OPENAI_MODEL"] || "gpt-4o-mini",
@@ -24,6 +28,9 @@ export function DynamicModel() {
   );
 
   const model = useComputed(() => {
+    if (useApple()) {
+      return apple();
+    }
     if (useGoogle()) {
       return google({
         model: googleModelName(),
@@ -40,7 +47,7 @@ export function DynamicModel() {
         baseURL: process.env["OPENAI_BASE_URL"],
       });
     }
-  }, [useGoogle, googleModelName, openaiModelName]);
+  }, [useGoogle, useApple, googleModelName, openaiModelName]);
 
   return <Model model={model()} />;
 }
