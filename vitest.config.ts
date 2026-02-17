@@ -23,8 +23,8 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "agentick/jsx-runtime": "./packages/core/src/jsx/jsx-runtime.ts",
-      "agentick/jsx-dev-runtime": "./packages/core/src/jsx/jsx-runtime.ts",
+      "agentick/jsx-runtime": "../agentick/packages/core/src/jsx/jsx-runtime.ts",
+      "agentick/jsx-dev-runtime": "../agentick/packages/core/src/jsx/jsx-runtime.ts",
     },
   },
 });
