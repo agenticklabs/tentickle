@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@agentick/agent": "*",
+    "@agentick/apple": "*",
     "@agentick/client": "*",
     "@agentick/connector": "*",
     "@agentick/connector-imessage": "*",

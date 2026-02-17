@@ -78,6 +78,7 @@
       "@agentick/tui": "link:../agentick/packages/tui",
       "@agentick/react": "link:../agentick/packages/react",
       "@agentick/client": "link:../agentick/packages/client",
+      "@agentick/apple": "link:../agentick/packages/adapters/apple",
       "@agentick/openai": "link:../agentick/packages/adapters/openai",
       "@agentick/google": "link:../agentick/packages/adapters/google",
       "@agentick/connector": "link:../agentick/packages/connector",
