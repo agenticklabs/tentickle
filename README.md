@@ -1,13 +1,13 @@
 # tentickle
 
-**A coding agent that proves the framework.**
+**An octopus's garden.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Built on agentick](https://img.shields.io/badge/Built_on-agentick-34d399?style=for-the-badge)](https://github.com/agenticklabs/agentick)
 
 <p align="center">
-  <img src="./public/tentickle_desk.png" alt="tentickle" width="480" />
+  <img src="./public/stubs_desk.png" alt="tentickle" width="480" />
 </p>
 
 Tentickle is an autonomous coding agent built on [agentick](https://github.com/agenticklabs/agentick) — the component framework for AI. It reads your code, writes changes, runs commands, and verifies its work, all inside a sandboxed workspace. It also serves as agentick's proving ground: every limitation we hit in the framework becomes an upstream fix, not a workaround.
@@ -73,24 +73,19 @@ function CodingAgent({ workspace }: { workspace: string }) {
 
 Components compose into the context window. Hooks control execution between ticks. Tools render their state back into what the model sees. The framework compiles it all — you just write React.
 
-## Running
+## Getting Started
+
+> **Not published yet.** The `npx` workflow below is where we're headed. For now, see [Contributing](#contributing) for the dev setup.
 
 ```bash
-# Prerequisites: Node.js 24+, pnpm 10+
-
-# Clone both repos side by side
-git clone https://github.com/agenticklabs/agentick.git
-git clone https://github.com/agenticklabs/tentickle.git
-
-# Build agentick first (tentickle links it as a sibling)
-cd agentick && pnpm install && pnpm build && cd ..
-
-# Install and run
-cd tentickle && pnpm install
-pnpm --filter @tentickle/coding start
+npx tentickle
 ```
 
-Create a `.env` file in the repo root with your API keys:
+That's the goal. One command — installs the agent, launches the TUI in your current directory. Stubs goes to work.
+
+### Configuration
+
+Create a `.env` in your project root (or export the vars):
 
 ```env
 # OpenAI (default)
@@ -109,7 +104,7 @@ USE_APPLE_MODEL=false
 OPENAI_BASE_URL=https://api.x.ai/v1
 ```
 
-The agent supports OpenAI, Google, and Apple Foundation Models out of the box. Model selection is dynamic — switch at runtime via `useComState`.
+Supports any OpenAI-compatible API, Google (Gemini & Vertex), and Apple Foundation Models. Model selection is dynamic — switch at runtime.
 
 ## The TUI
 
@@ -201,16 +196,33 @@ tentickle/
 └── ROADMAP.md                     # Development phases
 ```
 
-## Development
+## Contributing
+
+Tentickle and [agentick](https://github.com/agenticklabs/agentick) are co-developed. If you want to hack on the agent itself or contribute to the framework, you need both repos side by side.
 
 ```bash
-pnpm build                          # Build all packages
-pnpm test                           # Run tests
-pnpm typecheck                      # TypeScript strict mode
-pnpm --filter @tentickle/coding dev # Dev mode with auto-reload
+# Prerequisites: Node.js 24+, pnpm 10+
+
+# Clone both repos
+git clone https://github.com/agenticklabs/agentick.git
+git clone https://github.com/agenticklabs/tentickle.git
+
+# Build agentick first (tentickle links it via pnpm.overrides)
+cd agentick && pnpm install && pnpm build && cd ..
+
+# Install and run
+cd tentickle && pnpm install
+pnpm --filter @tentickle/coding start   # Launch the agent
+pnpm --filter @tentickle/coding dev     # Dev mode with auto-reload
 ```
 
-Tentickle and agentick are co-developed. Agentick packages are linked from the sibling repo via `pnpm.overrides`. When you change agentick, rebuild it (`cd ../agentick && pnpm build`) and the changes are immediately available.
+When you change agentick, rebuild it (`cd ../agentick && pnpm build`) and the changes are immediately available in tentickle.
+
+```bash
+pnpm build       # Build all packages
+pnpm test        # Run tests
+pnpm typecheck   # TypeScript strict mode
+```
 
 ## Status
 
@@ -222,7 +234,7 @@ What works today:
 - Sub-agent spawning for parallel work
 - Task planning and tracking
 - Persistent project memory
-- Multi-model support (OpenAI, Google, Apple)
+- Multi-model support (OpenAI-compatible, Google (Gemini & Vertex), Apple (FoundationModel))
 - Telegram and iMessage connectors
 - Rich terminal UI with confirmations, completions, and attachments
 

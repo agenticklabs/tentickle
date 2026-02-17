@@ -1,0 +1,55 @@
+{
+  "name": "tentickle",
+  "version": "0.0.1",
+  "description": "Autonomous coding agent built on agentick.",
+  "keywords": [
+    "agent",
+    "agentick",
+    "ai",
+    "autonomous",
+    "cli",
+    "coding"
+  ],
+  "license": "MIT",
+  "author": "Ryan Lindgren",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticklabs/tentickle.git",
+    "directory": "packages/tentickle"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "tentickle": "bin/tentickle.js"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+      "tentickle": "dist/bin/tentickle.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
+    "prepublishOnly": "cp ../../README.md . && pnpm build"
+  },
+  "dependencies": {
+    "@tentickle/coding": "workspace:*",
+    "@tentickle/tools": "workspace:*"
+  }
+}
