@@ -1,12 +1,44 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { useSession, useChat } from "@agentick/react";
+import { fileURLToPath } from "node:url";
+import { dirname, basename } from "node:path";
+import fs from "node:fs";
+import { getMemoryDir } from "../memory-path.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function getProjectInfo() {
+  const projectRoot = process.cwd();
+  const projectName = basename(projectRoot);
+  let projectAuthor = "Unknown";
+
+  try {
+    const packageJsonPath = `${projectRoot}/package.json`;
+    if (fs.existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
+      if (packageJson.author) {
+        projectAuthor =
+          typeof packageJson.author === "string"
+            ? packageJson.author
+            : packageJson.author.name || "Unknown";
+      }
+    }
+  } catch (e) {
+    console.error("Error reading package.json:", e);
+  }
+
+  return { projectName, projectAuthor };
+}
+
 import {
   ToolConfirmationPrompt,
   ErrorDisplay,
   InputBar,
   CompletionPicker,
   ToolCallIndicator,
+  SpawnIndicator,
   Spinner,
   useSlashCommands,
   useCommandsConfig,
@@ -29,8 +61,12 @@ import { printBanner } from "./components/Banner.js";
 import { AttachmentStrip } from "./components/AttachmentStrip.js";
 import { TaskList } from "./components/TaskList.js";
 import { attachCommand } from "./commands/attach.js";
-import { createFileCompletionSource, createDirCompletionSource } from "./file-completion.js";
-import { getMemoryDir } from "../memory-path.js";
+import {
+  createFileCompletionSource,
+  createDirCompletionSource,
+  createMentionCompletionSource,
+} from "./file-completion.js";
+import { ContextStrip } from "./components/ContextStrip.js";
 
 const confirmationPolicy: ConfirmationPolicy = (req) => {
   if (req.name === "write_file" || req.name === "edit_file") {
@@ -66,8 +102,10 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   const loggedCount = useRef(0);
   const [attachmentFocus, setAttachmentFocus] = useState<number | null>(null);
+  const [contextFiles, setContextFiles] = useState<string[]>([]);
+  const [contextFocus, setContextFocus] = useState<number | null>(null);
 
-  // Auto-clear focus when attachments change (e.g. last one removed)
+  // Auto-clear focus when attachments/context change (e.g. last one removed)
   useEffect(() => {
     if (attachments.length === 0) {
       setAttachmentFocus(null);
@@ -76,9 +114,18 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     }
   }, [attachments.length, attachmentFocus]);
 
+  useEffect(() => {
+    if (contextFiles.length === 0) {
+      setContextFocus(null);
+    } else if (contextFocus !== null && contextFocus >= contextFiles.length) {
+      setContextFocus(contextFiles.length - 1);
+    }
+  }, [contextFiles.length, contextFocus]);
+
   // Print banner to scrollback on mount
   useEffect(() => {
-    printBanner();
+    const { projectName, projectAuthor } = getProjectInfo();
+    printBanner(projectName, projectAuthor);
   }, []);
 
   // Print new messages to stdout via console.log.
@@ -148,12 +195,55 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     commandCtx,
   );
 
+  const addContextFile = useCallback((filePath: string) => {
+    setContextFiles((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
+  }, []);
+
+  const removeContextFile = useCallback((filePath: string) => {
+    setContextFiles((prev) => prev.filter((f) => f !== filePath));
+  }, []);
+
   const handleSubmit = useCallback(
     (text: string) => {
+      // Text submitted during tool confirmation → reject with feedback
+      if (chatMode === "confirming_tool" && toolConfirmation) {
+        if (!text.trim()) return;
+        respondToConfirmation({ approved: false, reason: text });
+        return;
+      }
       if (dispatch(text)) return;
-      submit(text);
+
+      // Extract @mentions from text → add to context, strip from message
+      const mentionRe = /(?:^|\s)@(\S+)/g;
+      let match;
+      const mentioned: string[] = [];
+      while ((match = mentionRe.exec(text)) !== null) {
+        mentioned.push(match[1]!);
+      }
+      const cleanText = text.replace(/(?:^|\s)@\S+/g, "").trim();
+
+      // Collect all context file paths (persistent + inline mentions)
+      const allContext = [...new Set([...contextFiles, ...mentioned])];
+
+      // Add inline mentions to persistent context
+      for (const m of mentioned) addContextFile(m);
+
+      // Prepend context references so the model knows to read them
+      const prefix =
+        allContext.length > 0
+          ? `[Context files: ${allContext.map((f) => `@${f}`).join(", ")}]\n\n`
+          : "";
+      submit(prefix + (cleanText || text));
     },
-    [dispatch, submit],
+    [
+      chatMode,
+      toolConfirmation,
+      respondToConfirmation,
+      dispatch,
+      submit,
+      contextFiles,
+      addContextFile,
+    ],
   );
 
   const editor = useLineEditor({ onSubmit: handleSubmit });
@@ -169,6 +259,10 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
   useEffect(() => {
     return editor.editor.registerCompletion(createDirCompletionSource());
+  }, [editor.editor]);
+
+  useEffect(() => {
+    return editor.editor.registerCompletion(createMentionCompletionSource());
   }, [editor.editor]);
 
   // Single centralized input handler — all keystrokes route through here
@@ -195,14 +289,43 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       return;
     }
 
-    // Tool confirmation → Y/N/A
+    // Tool confirmation → Y/N/A shortcuts when editor empty, else text input
     if (chatMode === "confirming_tool" && toolConfirmation) {
-      handleConfirmationKey(input, respondToConfirmation);
+      if (editor.value.length === 0 && handleConfirmationKey(input, respondToConfirmation)) {
+        return;
+      }
+      editor.handleInput(input, key);
       return;
     }
 
     // Idle mode input routing
     if (chatMode === "idle") {
+      // Context file focus mode
+      if (contextFocus !== null) {
+        if (key.leftArrow) {
+          setContextFocus(Math.max(0, contextFocus - 1));
+          return;
+        }
+        if (key.rightArrow) {
+          setContextFocus(Math.min(contextFiles.length - 1, contextFocus + 1));
+          return;
+        }
+        if (key.backspace || key.delete) {
+          removeContextFile(contextFiles[contextFocus]!);
+          return;
+        }
+        if (key.downArrow || key.escape) {
+          setContextFocus(null);
+          return;
+        }
+        if (!key.ctrl && !key.meta && input && !key.return) {
+          setContextFocus(null);
+          editor.handleInput(input, key);
+          return;
+        }
+        return;
+      }
+
       // Attachment focus mode
       if (attachmentFocus !== null) {
         if (key.leftArrow) {
@@ -221,7 +344,6 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
           setAttachmentFocus(null);
           return;
         }
-        // Printable char → exit focus, route to editor
         if (!key.ctrl && !key.meta && input && !key.return) {
           setAttachmentFocus(null);
           editor.handleInput(input, key);
@@ -230,10 +352,16 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
         return;
       }
 
-      // ↑ with empty input and attachments → enter attachment focus
-      if (key.upArrow && editor.value === "" && attachments.length > 0) {
-        setAttachmentFocus(attachments.length - 1);
-        return;
+      // ↑ with empty input → enter strip focus (context first, then attachments)
+      if (key.upArrow && editor.value === "") {
+        if (contextFiles.length > 0) {
+          setContextFocus(contextFiles.length - 1);
+          return;
+        }
+        if (attachments.length > 0) {
+          setAttachmentFocus(attachments.length - 1);
+          return;
+        }
       }
 
       editor.handleInput(input, key);
@@ -260,6 +388,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
             <Text color="yellow">Thinking...</Text>
           </Box>
           <ToolCallIndicator sessionId={sessionId} />
+          <SpawnIndicator sessionId={sessionId} />
         </Box>
       )}
 
@@ -286,17 +415,18 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
       <TaskList />
 
+      <ContextStrip files={contextFiles} focusIndex={contextFocus} />
       <AttachmentStrip attachments={attachments} focusIndex={attachmentFocus} />
 
       <InputBar
         value={editor.value}
         cursor={editor.cursor}
-        isActive={chatMode === "idle"}
+        isActive={true}
         placeholder={
           chatMode === "streaming"
             ? "Thinking..."
             : chatMode === "confirming_tool"
-              ? "Confirm tool above..."
+              ? "Type feedback to reject, or press Y/N/A..."
               : "Describe what you need..."
         }
       />
