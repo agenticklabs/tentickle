@@ -35,6 +35,7 @@
     "@agentick/sandbox-local": "*",
     "@agentick/shared": "*",
     "@agentick/tui": "*",
+    "@tentickle/cron": "workspace:*",
     "@tentickle/tools": "workspace:*",
     "agentick": "*",
     "grammy": "^1.40.0",

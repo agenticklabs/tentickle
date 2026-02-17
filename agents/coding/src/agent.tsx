@@ -23,6 +23,7 @@ import { createSpawnTool } from "./tools/spawn.js";
 import { EnhancedTimeline } from "./components/timeline.js";
 import { getMemoryDir, getMemoryPath, getClaudeMemoryDir, getSkillsDirs } from "./memory-path.js";
 import { TaskStore, bindTaskStore } from "./task-store.js";
+import { getCronStore, createScheduleTool } from "@tentickle/cron";
 
 const SpawnTool = createSpawnTool(CodingAgent);
 
@@ -271,6 +272,13 @@ export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
   const [taskStore] = useState(() => new TaskStore());
   const TaskTool = useMemo(() => createTaskTool(taskStore), [taskStore]);
 
+  // Shared cron store — bound globally in main.ts, shared across sessions
+  const cronStore = getCronStore();
+  const ScheduleTool = useMemo(
+    () => (cronStore ? createScheduleTool(cronStore) : null),
+    [cronStore],
+  );
+
   useContinuation((result) => {
     if (result.tick >= 50) return false;
     const tasks = taskStore.list();
@@ -332,6 +340,7 @@ export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
       <Glob />
       <Grep />
       <TaskTool />
+      {ScheduleTool && <ScheduleTool />}
       <SpawnTool />
     </Sandbox>
   );

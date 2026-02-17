@@ -1,8 +1,10 @@
 import { execSync } from "node:child_process";
+import { join } from "node:path";
 import { createClient } from "@agentick/client";
 import { createLocalTransport } from "@agentick/core";
 import { createTUI } from "@agentick/tui";
 import { startDevToolsServer } from "@agentick/devtools";
+import { CronService, bindCronStore } from "@tentickle/cron";
 import { createCodingApp } from "./index.js";
 import { CodingTUI } from "./tui/index.js";
 import { startConnectors } from "./connectors.js";
@@ -29,6 +31,15 @@ const client = createClient({
   transport: createLocalTransport(app),
 });
 
+// Scheduled jobs & heartbeat
+const cronService = new CronService({
+  dataDir: join(process.cwd(), ".tentickle"),
+  client,
+  defaultTarget: "tui",
+});
+bindCronStore(cronService.store);
+await cronService.start();
+
 // Start connectors (Telegram, iMessage) based on env vars
 const connectors = await startConnectors(client, {
   telegram: { sessionId: "telegram" },
@@ -43,6 +54,7 @@ const tui = createTUI({
 try {
   await tui.start();
 } finally {
+  await cronService.stop();
   for (const c of connectors) {
     await c.stop();
   }
