@@ -22,6 +22,7 @@ overrides:
   '@agentick/connector-telegram': link:../agentick/packages/connector-telegram
   '@agentick/connector-imessage': link:../agentick/packages/connector-imessage
   '@agentick/devtools': link:../agentick/packages/devtools
+  '@agentick/scheduler': link:../agentick/packages/scheduler
   react: link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
   react-reconciler: 0.31.0
   ink: link:../agentick/packages/tui/node_modules/ink
@@ -122,15 +123,15 @@ importers:
       '@agentick/sandbox-local':
         specifier: link:../../../agentick/packages/sandbox-local
         version: link:../../../agentick/packages/sandbox-local
+      '@agentick/scheduler':
+        specifier: link:../../../agentick/packages/scheduler
+        version: link:../../../agentick/packages/scheduler
       '@agentick/shared':
         specifier: link:../../../agentick/packages/shared
         version: link:../../../agentick/packages/shared
       '@agentick/tui':
         specifier: link:../../../agentick/packages/tui
         version: link:../../../agentick/packages/tui
-      '@tentickle/cron':
-        specifier: workspace:*
-        version: link:../../packages/cron
       '@tentickle/tools':
         specifier: workspace:*
         version: link:../../packages/tools

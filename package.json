@@ -85,6 +85,7 @@
       "@agentick/connector-telegram": "link:../agentick/packages/connector-telegram",
       "@agentick/connector-imessage": "link:../agentick/packages/connector-imessage",
       "@agentick/devtools": "link:../agentick/packages/devtools",
+      "@agentick/scheduler": "link:../agentick/packages/scheduler",
       "react": "link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react",
       "react-reconciler": "0.31.0",
       "ink": "link:../agentick/packages/tui/node_modules/ink",

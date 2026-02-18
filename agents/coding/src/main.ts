@@ -4,7 +4,7 @@ import { createClient } from "@agentick/client";
 import { createLocalTransport } from "@agentick/core";
 import { createTUI } from "@agentick/tui";
 import { startDevToolsServer } from "@agentick/devtools";
-import { CronService, bindCronStore } from "@tentickle/cron";
+import { CronService, bindSchedulerStore } from "@agentick/scheduler";
 import { createCodingApp } from "./index.js";
 import { CodingTUI } from "./tui/index.js";
 import { startConnectors } from "./connectors.js";
@@ -37,7 +37,7 @@ const cronService = new CronService({
   client,
   defaultTarget: "tui",
 });
-bindCronStore(cronService.store);
+bindSchedulerStore(cronService.store);
 await cronService.start();
 
 // Start connectors (Telegram, iMessage) based on env vars
