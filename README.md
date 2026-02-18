@@ -24,18 +24,18 @@ The coding agent operates in a tick loop — receive task, read context, make ch
 
 **Tools the agent has:**
 
-| Tool | Source | Description |
-| --- | --- | --- |
-| `shell` | `@agentick/sandbox` | Run commands in the workspace |
-| `read_file` | `@agentick/sandbox` | Read file contents |
-| `write_file` | `@agentick/sandbox` | Create or overwrite files |
-| `edit_file` | `@agentick/sandbox` | Surgical edits with 3-level matching |
-| `glob` | `@tentickle/tools` | Find files by pattern |
-| `grep` | `@tentickle/tools` | Search file contents by regex |
-| `task_list` | built-in | Plan, track, and complete multi-step work |
-| `spawn` | built-in | Delegate sub-tasks to parallel child agents |
-| `add-dir` | built-in | Mount additional directories at runtime |
-| `set_knob` | `@agentick/core` | Expand collapsed context sections |
+| Tool         | Source              | Description                                 |
+| ------------ | ------------------- | ------------------------------------------- |
+| `shell`      | `@agentick/sandbox` | Run commands in the workspace               |
+| `read_file`  | `@agentick/sandbox` | Read file contents                          |
+| `write_file` | `@agentick/sandbox` | Create or overwrite files                   |
+| `edit_file`  | `@agentick/sandbox` | Surgical edits with 3-level matching        |
+| `glob`       | `@tentickle/tools`  | Find files by pattern                       |
+| `grep`       | `@tentickle/tools`  | Search file contents by regex               |
+| `task_list`  | built-in            | Plan, track, and complete multi-step work   |
+| `spawn`      | built-in            | Delegate sub-tasks to parallel child agents |
+| `add-dir`    | built-in            | Mount additional directories at runtime     |
+| `set_knob`   | `@agentick/core`    | Expand collapsed context sections           |
 
 **What makes it interesting** is that the agent's entire brain is a JSX component tree:
 
@@ -51,8 +51,8 @@ function CodingAgent({ workspace }: { workspace: string }) {
       <DynamicModel />
 
       <System>
-        You are a coding agent working in: `{workspace}`
-        ACT, don't narrate. Use tools in EVERY response.
+        You are a coding agent working in: `{workspace}` ACT, don't narrate. Use tools in EVERY
+        response.
       </System>
 
       <WorkspaceGrounding workspace={workspace} />
@@ -229,6 +229,7 @@ pnpm typecheck   # TypeScript strict mode
 Early. The agent works and handles real coding tasks, but there's no CLI binary you can `npx`, no `init` command, no `doctor`. The TUI is functional but not polished. The system prompt is tuned but not optimized. See [ROADMAP.md](ROADMAP.md) for what's done and what's next.
 
 What works today:
+
 - Autonomous multi-step coding tasks with tool use
 - Sandboxed workspace isolation
 - Sub-agent spawning for parallel work
@@ -239,9 +240,10 @@ What works today:
 - Rich terminal UI with confirmations, completions, and attachments
 
 What's missing:
+
 - Installable CLI (`npx tentickle`)
 - Session persistence across restarts
-- Streaming message display (currently shows "Thinking..." spinner)
+- Streaming message display (currently shows "Thinking..." spinner) - desirable in TUI
 - Error recovery patterns
 - Verification loops (auto-run tests after edits)
 - Specialized agents (review, test, debug)

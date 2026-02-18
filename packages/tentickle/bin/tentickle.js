@@ -12,6 +12,6 @@
 console.error(
   "tentickle is not yet published. Run from source:\n\n" +
     "  cd tentickle\n" +
-    "  pnpm --filter @tentickle/coding start\n"
+    "  pnpm --filter @tentickle/coding start\n",
 );
 process.exit(1);

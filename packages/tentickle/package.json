@@ -17,19 +17,22 @@
     "url": "git+https://github.com/agenticklabs/tentickle.git",
     "directory": "packages/tentickle"
   },
+  "bin": {
+    "tentickle": "bin/tentickle.js"
+  },
   "files": [
     "dist"
   ],
   "type": "module",
   "main": "src/index.ts",
-  "bin": {
-    "tentickle": "bin/tentickle.js"
-  },
   "exports": {
     ".": "./src/index.ts"
   },
   "publishConfig": {
     "access": "public",
+    "bin": {
+      "tentickle": "dist/bin/tentickle.js"
+    },
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
@@ -37,10 +40,7 @@
       }
     },
     "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "bin": {
-      "tentickle": "dist/bin/tentickle.js"
-    }
+    "types": "./dist/index.d.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
