@@ -94,7 +94,11 @@ the sandbox's built-in tools.
 - **Components**: `<System>`, `<Timeline>`, `<Section>`, `<Message>`, `<Event>`,
   `<Ephemeral>`, `<Grounding>`, semantic formatting (`<List>`, `<Table>`, etc.)
 - **Hooks**: `useState`, `useEffect`, `useSignal`, `useOnMount`, `useOnTickEnd`,
-  `useContinuation`, `useKnob`, `useData`, `useComState`, `useContextInfo`
+  `useContinuation`, `useKnob`, `useGate`, `useData`, `useComState`, `useContextInfo`
+- **Gates**: `useGate(name, descriptor)` — knob-backed continuation condition.
+  Three states: `inactive`/`active`/`deferred`. Auto-activates via `activateWhen`,
+  blocks exit until model clears via `set_knob`. Returns `element` (Ephemeral
+  with instructions when active). `gate()` factory for descriptors.
 - **Tools**: `createTool` — dual-use (JSX component + `.run()` static). Tools
   render state back into context via `render` function. `audience: "user"`
   hides a tool from the model — dispatch via `session.dispatch(name, input)`.

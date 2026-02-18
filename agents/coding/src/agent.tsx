@@ -7,6 +7,8 @@ import {
   createTool,
   useOnMount,
   useOnTickEnd,
+  gate,
+  useGate,
 } from "@agentick/core";
 import { Sandbox, SandboxTools, useSandbox } from "@agentick/sandbox";
 import { localProvider } from "@agentick/sandbox-local";
@@ -49,6 +51,17 @@ function TaskStoreBridge({ store }: { store: TaskStore }) {
   }, [store]);
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Gate: verification — ensure model verifies edits before completing
+// ---------------------------------------------------------------------------
+
+const verificationGate = gate({
+  description: "Verify your changes before completing",
+  instructions: `VERIFICATION PENDING: You've modified files. Review your project memory for verification procedures. Run appropriate checks via shell (typecheck, tests, lint). Clear the verification gate when satisfied. Set to "deferred" if you plan to verify after completing other work.`,
+  activateWhen: (result) =>
+    result.toolCalls.some((tc) => ["write_file", "edit_file"].includes(tc.name)),
+});
 
 // ---------------------------------------------------------------------------
 // Grounding: workspace info (package.json, git branch, scripts)
@@ -279,6 +292,8 @@ export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
     [cronStore],
   );
 
+  const verification = useGate("verification", verificationGate);
+
   useContinuation((result) => {
     if (result.tick >= 50) return false;
     const tasks = taskStore.list();
@@ -336,6 +351,7 @@ export function CodingAgent({ workspace = process.cwd() }: CodingAgentProps) {
       <EnhancedTimeline />
 
       <Knobs />
+      {verification.element}
       <SandboxTools />
       <Glob />
       <Grep />
