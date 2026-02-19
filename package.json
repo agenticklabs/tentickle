@@ -69,7 +69,7 @@
   "packageManager": "pnpm@10.25.0",
   "pnpm": {
     "overrides": {
-      "ink": "^6.7.0",
+      "ink": "link:../agentick/node_modules/.pnpm/ink@6.8.0_@types+react@19.2.13_react@19.2.4/node_modules/ink",
       "react": "link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react",
       "react-reconciler": "link:../agentick/node_modules/.pnpm/react-reconciler@0.33.0_react@19.2.4/node_modules/react-reconciler",
       "@agentick/agent": "link:../agentick/packages/agent",

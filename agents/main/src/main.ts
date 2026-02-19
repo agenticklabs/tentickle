@@ -5,7 +5,7 @@ import { createLocalTransport } from "@agentick/core";
 import { createTUI, Chat } from "@agentick/tui";
 import { startDevToolsServer } from "@agentick/devtools";
 import { CronService, bindSchedulerStore } from "@agentick/scheduler";
-import { startConnectors } from "@tentickle/agent";
+import { startConnectors, bindSessionStore } from "@tentickle/agent";
 import { createMainApp } from "./index.js";
 
 // Normalize to workspace root
@@ -21,7 +21,8 @@ try {
 
 const _devtools = startDevToolsServer();
 
-const app = createMainApp({ devTools: true, maxTicks: 250 });
+const { app, store } = await createMainApp({ devTools: true, maxTicks: 250 });
+bindSessionStore(store);
 
 const client = createClient({
   baseUrl: "local://",

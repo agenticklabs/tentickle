@@ -40,6 +40,16 @@ export function getEntitiesDir(): string {
   return join(getDataDir(), "entities");
 }
 
+/** SQLite database path. */
+export function getDbPath(): string {
+  return join(getDataDir(), "tentickle.db");
+}
+
+/** Media files root directory. */
+export function getMediaDir(): string {
+  return join(getDataDir(), "media");
+}
+
 /** Sandbox profiles directory. */
 export function getProfilesDir(): string {
   return join(getDataDir(), "profiles");

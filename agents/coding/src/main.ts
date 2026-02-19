@@ -7,7 +7,7 @@ import { startDevToolsServer } from "@agentick/devtools";
 import { CronService, bindSchedulerStore } from "@agentick/scheduler";
 import { createCodingApp } from "./index.js";
 import { CodingTUI } from "./tui/index.js";
-import { startConnectors } from "@tentickle/agent";
+import { startConnectors, bindSessionStore } from "@tentickle/agent";
 
 // pnpm runs from agents/coding/ — normalize to workspace root so all paths
 // (sandbox, file picker, attachments) resolve from where the user expects.
@@ -23,7 +23,8 @@ try {
 
 const _devtools = startDevToolsServer();
 
-const app = createCodingApp({ devTools: true, maxTicks: 250 });
+const { app, store } = await createCodingApp({ devTools: true, maxTicks: 250 });
+bindSessionStore(store);
 
 // Shared client for TUI + connectors
 const client = createClient({

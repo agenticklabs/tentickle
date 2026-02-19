@@ -32,6 +32,8 @@ export { AddDirCommand } from "./tools/add-dir.js";
 // Path helpers
 export {
   getDataDir,
+  getDbPath,
+  getMediaDir,
   getIdentityPath,
   getProjectDir,
   getMemoryPath,
@@ -43,6 +45,16 @@ export {
   getGlobalRulesDir,
   getProjectRulesDir,
 } from "./paths.js";
+
+// App factory
+export { createTentickleApp } from "./app.js";
+export type { TentickleAppResult } from "./app.js";
+
+// Session store binding (global ref for TUI bridge)
+export { bindSessionStore, getSessionStore } from "./session-store-binding.js";
+
+// Storage
+export { openDatabase, TentickleSessionStore } from "./storage/index.js";
 
 // Settings
 export {

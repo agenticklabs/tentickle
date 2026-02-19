@@ -29,7 +29,7 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.build.json",
+    "build": "tsc -b tsconfig.build.json && cp -r src/storage/migrations dist/storage/migrations",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
     "format:check": "oxfmt --check src/",

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { useSession, useChat } from "@agentick/react";
+import { timelineToMessages } from "@agentick/client";
 import { fileURLToPath } from "node:url";
 import { dirname, basename } from "node:path";
 import fs from "node:fs";
-import { getProjectDir } from "@tentickle/agent";
+import { getProjectDir, getSessionStore } from "@tentickle/agent";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -82,6 +83,14 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
   const { exit } = useApp();
   const { abort, accessor } = useSession({ sessionId, autoSubscribe: true });
 
+  const initialMessages = useMemo(() => {
+    const store = getSessionStore();
+    if (!store) return undefined;
+    const snapshot = store.loadSync(sessionId);
+    if (!snapshot?.timeline) return undefined;
+    return timelineToMessages(snapshot.timeline, new Map());
+  }, [sessionId]);
+
   const {
     submit,
     queued,
@@ -96,11 +105,17 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
     attachments,
     addAttachment,
     removeAttachment,
-  } = useChat({ sessionId, mode: "queue", flushMode: "sequential", confirmationPolicy });
+  } = useChat({
+    sessionId,
+    mode: "queue",
+    flushMode: "sequential",
+    confirmationPolicy,
+    initialMessages,
+  });
 
   const { handleCtrlC, showExitHint } = useDoubleCtrlC(exit);
 
-  const loggedCount = useRef(0);
+  const loggedCount = useRef(initialMessages?.length ?? 0);
   const [attachmentFocus, setAttachmentFocus] = useState<number | null>(null);
   const [contextFiles, setContextFiles] = useState<string[]>([]);
   const [contextFocus, setContextFocus] = useState<number | null>(null);
@@ -126,6 +141,17 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
   useEffect(() => {
     const { projectName, projectAuthor } = getProjectInfo();
     printBanner(projectName, projectAuthor);
+  }, []);
+
+  // Print restored history on mount
+  useEffect(() => {
+    if (!initialMessages?.length) return;
+    for (const msg of initialMessages) {
+      console.log(
+        renderMessage({ role: msg.role, content: msg.content, toolCalls: msg.toolCalls }),
+      );
+      console.log();
+    }
   }, []);
 
   // Print new messages to stdout via console.log.
