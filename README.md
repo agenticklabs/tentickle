@@ -7,7 +7,7 @@
 [![Built on agentick](https://img.shields.io/badge/Built_on-agentick-34d399?style=for-the-badge)](https://github.com/agenticklabs/agentick)
 
 <p align="center">
-  <img src="./public/stubs_desk.png" alt="tentickle" width="480" />
+  <img src="https://raw.githubusercontent.com/agenticklabs/tentickle/master/public/stubs_desk.png" alt="tentickle" width="480" />
 </p>
 
 Tentickle is a family of autonomous agents built on [agentick](https://github.com/agenticklabs/agentick) — the component framework for AI. Each agent is a JSX component tree: tools, context, hooks, and behavior composed declaratively. Tentickle also serves as agentick's proving ground — every framework limitation becomes an upstream fix, not a workaround.

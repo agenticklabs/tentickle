@@ -1,6 +1,6 @@
 {
   "name": "tentickle",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Autonomous coding agent built on agentick.",
   "keywords": [
     "agent",
@@ -21,7 +21,8 @@
     "tentickle": "bin/tentickle.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "type": "module",
   "main": "src/index.ts",
@@ -46,9 +47,10 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
-    "prepublishOnly": "cp ../../README.md . && pnpm build"
+    "prepublishOnly": "pnpm build"
   },
   "dependencies": {
+    "@tentickle/agent": "workspace:*",
     "@tentickle/coding": "workspace:*",
     "@tentickle/main": "workspace:*",
     "@tentickle/tools": "workspace:*"

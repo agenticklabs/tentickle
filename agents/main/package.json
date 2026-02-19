@@ -1,14 +1,38 @@
 {
   "name": "@tentickle/main",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Main agent — orchestration, judgment, context maintenance",
+  "license": "MIT",
+  "author": "Ryan Lindgren",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticklabs/tentickle.git",
+    "directory": "agents/main"
+  },
   "bin": {
     "tentickle-main": "bin/tentickle-main.ts"
   },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "tentickle-main": "dist/bin/tentickle-main.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
   },
   "scripts": {
     "start": "node --env-file=../../.env --import tsx bin/tentickle-main.ts",

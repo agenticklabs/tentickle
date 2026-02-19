@@ -225,6 +225,9 @@ importers:
 
   packages/tentickle:
     dependencies:
+      '@tentickle/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@tentickle/coding':
         specifier: workspace:*
         version: link:../../agents/coding

@@ -1,14 +1,38 @@
 {
   "name": "@tentickle/coding",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Coding agent — autonomous software engineering",
+  "license": "MIT",
+  "author": "Ryan Lindgren",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticklabs/tentickle.git",
+    "directory": "agents/coding"
+  },
   "bin": {
     "tentickle": "bin/tentickle.ts"
   },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "tentickle": "dist/bin/tentickle.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
   },
   "scripts": {
     "start": "node --env-file=../../.env --import tsx bin/tentickle.ts",
