@@ -1,5 +1,11 @@
 # @tentickle/tools
 
+## 0.0.3
+
+### Patch Changes
+
+- Fix @agentick/_ dependency ranges — replace wildcard "_" with pinned "^0.8.0"
+
 ## 0.0.2
 
 ### Patch Changes

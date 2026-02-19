@@ -1,6 +1,6 @@
 {
   "name": "@tentickle/agent",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Base agent component — identity, memory, sandbox, tools",
   "license": "MIT",
   "author": "Ryan Lindgren",
