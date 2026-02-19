@@ -1,3 +1,4 @@
+import React from "react";
 import { useState, useEffect, useMemo, createContext, useContext } from "react";
 import { Knobs } from "@agentick/core";
 import { Sandbox, SandboxTools } from "@agentick/sandbox";
