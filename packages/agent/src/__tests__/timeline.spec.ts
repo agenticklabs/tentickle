@@ -4,7 +4,7 @@ import {
   hasMultimodal,
   userMultimodalSummary,
   toolResultSummary,
-} from "./timeline.js";
+} from "../timeline.js";
 import type { Message } from "@agentick/shared";
 
 function msg(role: Message["role"], content: any[]): Message {
@@ -169,10 +169,7 @@ describe("userMultimodalSummary", () => {
   });
 
   it("empty content produces just media placeholder", () => {
-    // Degenerate case: called on message with no media — shouldn't happen
-    // but function should not crash
     const result = userMultimodalSummary(msg("user", [TEXT_BLOCK("hello")]));
-    // No media → labels is empty → produces "hello\n[]"
     expect(result).toContain("hello");
   });
 });
@@ -246,7 +243,6 @@ describe("toolResultSummary", () => {
   it("handles very large number of media blocks", () => {
     const blocks = Array.from({ length: 100 }, () => IMAGE_BLOCK);
     const result = toolResultSummary(msg("tool", blocks));
-    // Should list all 100 "image" labels
     expect(result.startsWith("[")).toBe(true);
     expect(result.split("image").length - 1).toBe(100);
   });
@@ -257,10 +253,6 @@ describe("toolResultSummary", () => {
 // ===========================================================================
 
 describe("collapse strategy contracts", () => {
-  // These test the INVARIANTS of the EnhancedTimeline collapse logic.
-  // The component uses these functions to decide what to collapse.
-  // If these invariants break, the model sees corrupted context.
-
   describe("assistant messages must never be summarized", () => {
     it("assistant with tool_use: hasMultimodal is false", () => {
       const m = msg("assistant", [
@@ -268,15 +260,10 @@ describe("collapse strategy contracts", () => {
         TOOL_USE("shell"),
         TOOL_USE("read_file"),
       ]);
-      // hasMultimodal drives user collapse — must be false for tool_use
       expect(hasMultimodal(m)).toBe(false);
     });
 
     it("assistant with image: hasMultimodal is true but role check prevents collapse", () => {
-      // This tests the invariant that even if hasMultimodal returns true
-      // for an assistant message, the switch(msg.role) in EnhancedTimeline
-      // routes "assistant" to pass-through, not to the hasMultimodal check.
-      // We can't test the component here, but we document the contract.
       const m = msg("assistant", [TEXT_BLOCK("Here's the image"), IMAGE_BLOCK]);
       expect(hasMultimodal(m)).toBe(true);
       // The component MUST check role before checking hasMultimodal
@@ -297,7 +284,7 @@ describe("collapse strategy contracts", () => {
     it("text-only tool result produces non-empty summary", () => {
       const result = toolResultSummary(msg("tool", [TEXT_BLOCK("file contents here")]));
       expect(result).toBeTruthy();
-      expect(result).not.toBe("[tool result]"); // has actual content
+      expect(result).not.toBe("[tool result]");
     });
 
     it("empty tool result has fallback (not empty string)", () => {

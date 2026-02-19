@@ -57,10 +57,14 @@ export function toolResultSummary(msg: Message): string {
   return parts.join("\n") || "[tool result]";
 }
 
-// ---------------------------------------------------------------------------
-// EnhancedTimeline: current execution full-fidelity, past compacted
-// ---------------------------------------------------------------------------
-
+/**
+ * Enhanced timeline: current execution full-fidelity, past compacted.
+ *
+ * Historical tool results get collapsed summaries. Historical user messages
+ * with multimodal content get text-only summaries. Assistant messages are
+ * never modified (ICL corruption risk). All collapsed messages get
+ * expandable ref names.
+ */
 export function EnhancedTimeline() {
   const [executionStartedAt, setExecutionStartedAt] = useState<number | null>(null);
 

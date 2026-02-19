@@ -5,8 +5,7 @@ import { z } from "zod";
 /**
  * Creates an explore tool that spawns a sub-agent for exploratory tasks.
  *
- * This tool allows the main agent to delegate open-ended exploration to a sub-agent.
- * The sub-agent will have access to all tools, including 'spawn' and 'explore',
+ * The sub-agent has access to all tools, including 'spawn' and 'explore',
  * allowing for recursive exploration or task delegation.
  *
  * @param Agent - The component to spawn. Typically the same agent (self-spawn).

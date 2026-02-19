@@ -2,15 +2,13 @@ import { execSync } from "node:child_process";
 import { join } from "node:path";
 import { createClient } from "@agentick/client";
 import { createLocalTransport } from "@agentick/core";
-import { createTUI } from "@agentick/tui";
+import { createTUI, Chat } from "@agentick/tui";
 import { startDevToolsServer } from "@agentick/devtools";
 import { CronService, bindSchedulerStore } from "@agentick/scheduler";
-import { createCodingApp } from "./index.js";
-import { CodingTUI } from "./tui/index.js";
 import { startConnectors } from "@tentickle/agent";
+import { createMainApp } from "./index.js";
 
-// pnpm runs from agents/coding/ — normalize to workspace root so all paths
-// (sandbox, file picker, attachments) resolve from where the user expects.
+// Normalize to workspace root
 try {
   const root = execSync("git rev-parse --show-toplevel", {
     encoding: "utf-8",
@@ -23,9 +21,8 @@ try {
 
 const _devtools = startDevToolsServer();
 
-const app = createCodingApp({ devTools: true, maxTicks: 250 });
+const app = createMainApp({ devTools: true, maxTicks: 250 });
 
-// Shared client for TUI + connectors
 const client = createClient({
   baseUrl: "local://",
   transport: createLocalTransport(app),
@@ -48,7 +45,7 @@ const connectors = await startConnectors(client, {
 
 const tui = createTUI({
   client,
-  ui: CodingTUI,
+  ui: Chat,
 });
 
 try {

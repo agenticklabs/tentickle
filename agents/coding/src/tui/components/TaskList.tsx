@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Box, Text } from "ink";
-import { getTaskStore, type Task } from "../../task-store.js";
+import { getTaskStore, type Task } from "@tentickle/agent";
 
 const STATUS_CONFIG: Record<Task["status"], { icon: string; color: string }> = {
   pending: { icon: "○", color: "gray" },

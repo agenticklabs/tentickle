@@ -50,6 +50,7 @@
   },
   "dependencies": {
     "@tentickle/coding": "workspace:*",
+    "@tentickle/main": "workspace:*",
     "@tentickle/tools": "workspace:*"
   }
 }

@@ -4,7 +4,7 @@ import { useSession, useChat } from "@agentick/react";
 import { fileURLToPath } from "node:url";
 import { dirname, basename } from "node:path";
 import fs from "node:fs";
-import { getMemoryDir } from "../memory-path.js";
+import { getProjectDir } from "@tentickle/agent";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -71,7 +71,7 @@ import { ContextStrip } from "./components/ContextStrip.js";
 const confirmationPolicy: ConfirmationPolicy = (req) => {
   if (req.name === "write_file" || req.name === "edit_file") {
     const path = req.arguments.path as string | undefined;
-    if (path && path.startsWith(getMemoryDir(process.cwd()))) {
+    if (path && path.startsWith(getProjectDir(process.cwd()))) {
       return { action: "approve" };
     }
   }
