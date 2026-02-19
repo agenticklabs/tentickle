@@ -15,16 +15,16 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@agentick/apple": "*",
     "@agentick/client": "*",
     "@agentick/connector": "*",
     "@agentick/connector-imessage": "*",
     "@agentick/connector-telegram": "*",
     "@agentick/core": "*",
-    "@agentick/sandbox": "*",
-    "@agentick/sandbox-local": "*",
-    "@agentick/apple": "*",
     "@agentick/google": "*",
     "@agentick/openai": "*",
+    "@agentick/sandbox": "*",
+    "@agentick/sandbox-local": "*",
     "@agentick/shared": "*",
     "@tentickle/tools": "workspace:*",
     "zod": "^4.3.6"
