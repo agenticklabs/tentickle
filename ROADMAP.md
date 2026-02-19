@@ -56,7 +56,66 @@ the biggest capability gains live.
 - [ ] Error recovery — detect repeated failures, suggest alternatives
 - [ ] Task dependencies — blocking, parallel execution hints
 
-## Phase 5: Packaging & Distribution
+## Phase 5: Memory & Persistent Storage
+
+Replace blob-per-session with normalized SQLite. Every session is a group chat.
+Messages, entities, and memories are queryable. Forkable sessions with timeline
+inheritance. Media pipeline for searchable attachments. Recall tools backed by
+FTS5 search and spawned retrieval agents.
+
+Full schema: `plans/memory-storage-schema.md`
+
+### Tier 1 — Foundation (enables everything else)
+
+- [ ] Migration system — numbered SQL files, `schema_migrations` table, checksum
+      verification, forward-only, transaction-per-migration. Initial schema = 001.
+- [ ] Normalized SQLite schema — sessions, participants, messages, content_blocks,
+      events, session_state. Replace JSON blob snapshots.
+- [ ] Media directory — `~/.tentickle/media/`, deduplicated by content hash.
+      Media table with provenance tracking.
+- [ ] Write path — new sessions write to normalized tables. Timeline assembled
+      from queries, not deserialized blobs.
+- [ ] Entity migration — move `~/.tentickle/entities/*.md` into `entities` table.
+      `EntityAwareness` reads from DB.
+
+### Tier 2 — Recall tools
+
+- [ ] `recall(query)` — single-pass search. One spawned haiku agent searches
+      memories_fts + messages_fts + entities_fts. Returns curated summary.
+- [ ] `deep_recall(query)` — fan-out search. Partitions history by time/session,
+      spawns N haiku agents in parallel, merges results. Depth limit: 2.
+- [ ] `remember(topic, content, tags?)` — append-only memory log. Time-decayed
+      relevance. Lineage tracking for concept evolution.
+- [ ] Append-only memories — never update, only append. Time decay ranking.
+      Evolution queries ("what did we believe about X at time T?").
+
+### Tier 3 — Forkable sessions
+
+- [ ] `session_type = 'fork'` with `fork_after_message_id`
+- [ ] `WITH RECURSIVE` timeline assembly across fork chains
+- [ ] Fork UI in TUI — branch indicator, parent reference
+- [ ] Spawn sessions as children — `session_type = 'spawn'`, no timeline inheritance
+
+### Tier 4 — Knowledge graph
+
+- [ ] Entity extraction middleware — `tool.run` middleware on `remember` tool.
+      Fast structured-output call (haiku) extracts entities + relationships
+      from memory content. Synchronous, auditable, no background jobs.
+- [ ] `entity_relationships` table — typed edges with provenance and confidence.
+      Graph traversal via self-joins and `WITH RECURSIVE`.
+- [ ] Graph-aware recall — recall tools can traverse entity relationships to
+      find contextually relevant knowledge (2-hop max).
+
+### Tier 5 — Media pipeline
+
+- [ ] Ingest: hash, dedup, store, insert media row
+- [ ] Thumbnails: resize images for LLM ingestion (token optimization)
+- [ ] VLM descriptions: local vision model describes images/documents for
+      searchability via `media_fts`
+- [ ] Speech-to-text: transcribe audio/video for searchability
+- [ ] All async — doesn't block conversation
+
+## Phase 6: Packaging & Distribution
 
 Ship `tentickle` as an installable CLI. Users should never need to clone agentick.
 
@@ -68,7 +127,21 @@ Ship `tentickle` as an installable CLI. Users should never need to clone agentic
 - [ ] Publish to npm — `tentickle` + `@tentickle/coding` + `@tentickle/tools`
 - [ ] Decouple from agentick sibling — consume published `@agentick/*` packages
 
-## Phase 6: Specialized Agents
+## Phase 7: OS-Level Isolation (Opt-In)
+
+Dedicated OS user for production deployments. Default: run as current user
+(zero friction). Opt-in via `tentickle init --system-user`.
+
+- [ ] `tentickle init --system-user` — create dedicated `tentickle` OS user,
+      set up home directory, file permissions (rwx------), platform detection
+- [ ] macOS support — `sysadminctl` / `dscl` user creation, ACLs for workspace
+- [ ] Linux support — `useradd`, `setfacl` for workspace access
+- [ ] Gateway runs as bot user — network-facing process isolated from human account
+- [ ] Data at rest protection — SQLite DB, media, memories owned by bot user
+- [ ] Workspace access — ACL grants bot user read/write to project directory only
+- [ ] Fallback — graceful degradation if running as current user (no permission changes)
+
+## Phase 8: Specialized Agents
 
 Extract patterns and build focused agents that compose with the coding agent.
 
@@ -82,6 +155,45 @@ Extract patterns and build focused agents that compose with the coding agent.
 
 Every framework gap gets an entry in `AGENTS.md`. Fix upstream, don't work around.
 
+### Plugin Architecture (Core Extensibility)
+
+Agentick's integration points must follow a **plugin pattern** where external
+code wires itself into the framework via `{ install(target): void }`. Plugins
+control their own lifecycle, persistence strategy, and cleanup. The framework
+provides touch points (events, state accessors); plugins subscribe and manage
+themselves.
+
+Full design: `../agentick/plans/session-store-plugin.md`
+
+**Phase 1 — Session Store Plugin** (HIGH — blocks persistence work):
+
+- [ ] `SessionStorePlugin` type: `install(session)` + `load/list/has/delete`
+- [ ] `MemoryStore()` function replaces `MemorySessionStore` class
+- [ ] `SqliteStore()` function replaces `SqliteSessionStore`
+- [ ] Kill `_persistCallback`, `setPersistCallback()`, `SessionRegistry.persist()`
+- [ ] Kill `onBeforePersist/onAfterPersist/onBeforeRestore/onAfterRestore` from AppOptions
+- [ ] Convert `TentickleSessionStore` to plugin (self-wiring incremental persistence)
+
+**Phase 2 — DevTools Plugin** (MEDIUM — kills global singleton):
+
+- [ ] `DevToolsPlugin` type with per-session install
+- [ ] Extract devtools emission from SessionImpl
+- [ ] Replace `devTools: boolean` with `devTools?: DevToolsPlugin`
+
+**Phase 3 — Recording Plugin** (MEDIUM-LOW — slims SessionImpl):
+
+- [ ] Extract `captureTickSnapshot()` + recording state from SessionImpl
+- [ ] Replace `recording: RecordingMode` with `recording?: RecordingPlugin`
+
+**Phase 4 — Scheduler Plugin** (MEDIUM — kills global binding):
+
+- [ ] Refactor `CronService` to return a plugin with `.Tool` for component tree
+- [ ] Kill `bindSchedulerStore()` / `getSchedulerStore()` globals
+
+**Not plugins** (correct as-is): Model Adapter (handler-bag), ExecutionRunner
+(handler-bag+lifecycle), Sandbox Provider (factory), Middleware (AOP),
+Guardrails (middleware), Secret Store (service), Transport (infrastructure).
+
 ### Recently contributed upstream
 
 - Spawn event bubbling (spawn_start/spawn_end, child event forwarding)
@@ -94,6 +206,7 @@ Every framework gap gets an entry in `AGENTS.md`. Fix upstream, don't work aroun
 - `audience` tool property (replaced `commandOnly`)
 - `dispatch` session method (replaced `dispatchCommand`)
 - `mapChunk` array return support (Grok streaming fix)
+- `<Tool>` handler Procedure wrapping (`tool-procedure.ts`)
 
 ### Upstream work needed
 

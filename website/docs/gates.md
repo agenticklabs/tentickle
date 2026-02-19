@@ -6,11 +6,11 @@ Gates are named checkpoints that block the model from completing until cleared. 
 
 A gate is a [knob](https://agenticklabs.github.io/agentick/docs/knobs) with three states and auto-activation logic:
 
-| State | Model Sees It | Blocks Exit | Instructions Shown |
-|-------|--------------|-------------|-------------------|
-| `inactive` | No | No | No |
-| `active` | Yes | Yes | Yes (ephemeral) |
-| `deferred` | Yes (as deferred) | Yes (un-defers first) | No |
+| State      | Model Sees It     | Blocks Exit           | Instructions Shown |
+| ---------- | ----------------- | --------------------- | ------------------ |
+| `inactive` | No                | No                    | No                 |
+| `active`   | Yes               | Yes                   | Yes (ephemeral)    |
+| `deferred` | Yes (as deferred) | Yes (un-defers first) | No                 |
 
 ## The Flow
 
@@ -38,9 +38,7 @@ const verificationGate = gate({
   instructions: `VERIFICATION PENDING: You've modified files.
     Run appropriate checks. Clear the gate when satisfied.`,
   activateWhen: (result) =>
-    result.toolCalls.some((tc) =>
-      ["write_file", "edit_file"].includes(tc.name),
-    ),
+    result.toolCalls.some((tc) => ["write_file", "edit_file"].includes(tc.name)),
 });
 
 function CodingAgent({ workspace }) {
@@ -76,11 +74,11 @@ The model can defer a gate (`set_knob verification deferred`) to acknowledge it 
 
 ```typescript
 interface GateState {
-  active: boolean;       // true when gate is active
-  deferred: boolean;     // true when gate is deferred
-  engaged: boolean;      // active || deferred
-  clear: () => void;     // set to inactive
-  defer: () => void;     // set to deferred
-  element: JSX.Element | null;  // Ephemeral when active
+  active: boolean; // true when gate is active
+  deferred: boolean; // true when gate is deferred
+  engaged: boolean; // active || deferred
+  clear: () => void; // set to inactive
+  defer: () => void; // set to deferred
+  element: JSX.Element | null; // Ephemeral when active
 }
 ```

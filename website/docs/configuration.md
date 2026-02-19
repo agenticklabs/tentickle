@@ -4,10 +4,10 @@ Tentickle uses a layered settings system. Each layer overrides the one above it.
 
 ## Layers
 
-| Layer | Path | Committed? |
-|-------|------|-----------|
-| Global | `~/.tentickle/settings.json` | N/A |
-| Project | `.tentickle/settings.json` | Yes |
+| Layer         | Path                             | Committed?          |
+| ------------- | -------------------------------- | ------------------- |
+| Global        | `~/.tentickle/settings.json`     | N/A                 |
+| Project       | `.tentickle/settings.json`       | Yes                 |
 | Project Local | `.tentickle/settings.local.json` | No (gitignore this) |
 
 ## Settings
@@ -21,12 +21,12 @@ Tentickle uses a layered settings system. Each layer overrides the one above it.
 }
 ```
 
-| Field | Description |
-|-------|-------------|
-| `agent` | Which agent to use (`coding`, `main`) |
+| Field      | Description                                 |
+| ---------- | ------------------------------------------- |
+| `agent`    | Which agent to use (`coding`, `main`)       |
 | `provider` | Model provider: `openai`, `google`, `apple` |
-| `model` | Model name within the provider |
-| `baseUrl` | Provider endpoint override |
+| `model`    | Model name within the provider              |
+| `baseUrl`  | Provider endpoint override                  |
 
 ## Environment Variables
 

@@ -116,7 +116,9 @@ Tentickle stores persistent state in `~/.tentickle/`:
 ```
 ~/.tentickle/
 ├── IDENTITY.md              # Agent's self-authored identity document
+├── tentickle.db             # SQLite — sessions, messages, events
 ├── settings.json            # Global settings (provider, model, etc.)
+├── media/                   # Attachments, deduplicated by content hash
 ├── user/                    # Owner profile — info about the human
 ├── entities/                # Entity profiles (people, orgs, projects)
 ├── rules/                   # Global rules (markdown files)
@@ -211,6 +213,7 @@ tentickle/
 │   │       ├── settings.ts        # Layered settings system
 │   │       ├── paths.ts           # Data directory resolution
 │   │       ├── connectors.ts      # Telegram + iMessage bridges
+│   │       ├── storage/           # SQLite session store, migrations
 │   │       └── tools/             # Task list, spawn, explore, add-dir
 │   ├── tools/                     # @tentickle/tools — Glob, Grep
 │   └── tentickle/                 # tentickle — meta-package & CLI binary
@@ -257,17 +260,18 @@ What works today:
 - Sandboxed workspace isolation (OS-level)
 - Sub-agent spawning for parallel work
 - Task planning and tracking
+- Session persistence — SQLite-backed, messages survive restarts
 - Persistent project memory and layered settings
 - Multi-model support (OpenAI-compatible, Google, Apple)
 - Scheduled jobs and heartbeats via `@agentick/scheduler`
 - Telegram and iMessage connectors
 - Rich terminal UI with confirmations, completions, context injection, and attachments
 
-What's missing:
+What's next:
 
-- Installable CLI (`npx tentickle`)
-- Session persistence across restarts
-- Streaming message display in TUI
+- Installable CLI (`npx tentickle`) with subcommands (`send`, `sessions`, `serve`)
+- Shared TUI base — extract common chat UI for coding and main agents
+- Docker container support for headless operation
 - Error recovery patterns
 - More specialized agents (review, test, debug)
 

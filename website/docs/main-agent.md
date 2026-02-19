@@ -43,9 +43,9 @@ The agent's memory and context lives on the filesystem. It uses `read_file`, `gl
 
 ## Data Locations
 
-| Path | Purpose |
-|------|---------|
-| `~/.tentickle/user/` | Human's profile — maintained by the agent |
-| `~/.tentickle/entities/` | Entity profiles — one markdown file per entity |
-| `~/.tentickle/projects/{slug}/MEMORY.md` | Per-project persistent memory |
-| `{workspace}` | Current working directory |
+| Path                                     | Purpose                                        |
+| ---------------------------------------- | ---------------------------------------------- |
+| `~/.tentickle/user/`                     | Human's profile — maintained by the agent      |
+| `~/.tentickle/entities/`                 | Entity profiles — one markdown file per entity |
+| `~/.tentickle/projects/{slug}/MEMORY.md` | Per-project persistent memory                  |
+| `{workspace}`                            | Current working directory                      |

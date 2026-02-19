@@ -9,7 +9,10 @@ export default defineConfig({
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:title", content: "tentickle" }],
     ["meta", { property: "og:description", content: "Autonomous agents built on agentick." }],
-    ["meta", { property: "og:image", content: "https://agenticklabs.github.io/tentickle/stubs.png" }],
+    [
+      "meta",
+      { property: "og:image", content: "https://agenticklabs.github.io/tentickle/stubs.png" },
+    ],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
     ["meta", { name: "twitter:title", content: "tentickle" }],
     ["meta", { name: "twitter:description", content: "Autonomous agents built on agentick." }],

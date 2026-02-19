@@ -32,20 +32,20 @@ function CodingAgent({ workspace }) {
 
 ## Tools
 
-| Tool | Description |
-|------|-------------|
-| `shell` | Run commands in the workspace |
-| `read_file` | Read file contents |
-| `write_file` | Create or overwrite files |
-| `edit_file` | Surgical edits with 3-level matching |
-| `glob` | Find files by pattern |
-| `grep` | Search file contents by regex |
-| `task_list` | Plan, track, and complete multi-step work |
-| `spawn` | Delegate sub-tasks to parallel child agents |
-| `explore` | Open-ended research via sub-agent |
-| `add-dir` | Mount additional directories at runtime |
-| `set_knob` | Expand collapsed context, clear gates |
-| `schedule` | Create scheduled jobs |
+| Tool         | Description                                 |
+| ------------ | ------------------------------------------- |
+| `shell`      | Run commands in the workspace               |
+| `read_file`  | Read file contents                          |
+| `write_file` | Create or overwrite files                   |
+| `edit_file`  | Surgical edits with 3-level matching        |
+| `glob`       | Find files by pattern                       |
+| `grep`       | Search file contents by regex               |
+| `task_list`  | Plan, track, and complete multi-step work   |
+| `spawn`      | Delegate sub-tasks to parallel child agents |
+| `explore`    | Open-ended research via sub-agent           |
+| `add-dir`    | Mount additional directories at runtime     |
+| `set_knob`   | Expand collapsed context, clear gates       |
+| `schedule`   | Create scheduled jobs                       |
 
 ## Behavioral Rules
 
@@ -59,6 +59,7 @@ The system prompt enforces:
 ## Continuation Logic
 
 The agent runs until:
+
 - All tasks are complete (if it created any)
 - It hits the 50-tick safety limit
 - It explicitly stops

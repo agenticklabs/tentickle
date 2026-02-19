@@ -6,28 +6,24 @@ The agent doesn't dump a system prompt and hope. Every piece of context is a com
 
 ```tsx
 <TentickleAgent workspace={workspace}>
-  <Identity />              {/* ~/.tentickle/IDENTITY.md */}
-  <UserContext />            {/* ~/.tentickle/user/*.md */}
-  <DynamicModel />           {/* Provider selection */}
-  <Knobs />                  {/* Reactive state controls */}
-
-  <WorkspaceGrounding />     {/* package.json, git branch, scripts */}
-  <ProjectConventions />     {/* CLAUDE.md or AGENTS.md */}
-  <ClaudeMemory />           {/* Claude Code's MEMORY.md (read-only) */}
-  <Skills />                 {/* Discovered SKILL.md files */}
-  <EntityAwareness />        {/* Entity profile index */}
-  <Rules />                  {/* Global + project rules */}
-  <Memory />                 {/* Project MEMORY.md */}
-
-  <EnhancedTimeline />       {/* Conversation history */}
-
-  <SandboxTools />           {/* Shell, read, write, edit */}
-  <Glob />                   {/* File search */}
-  <Grep />                   {/* Content search */}
-  <TaskTool />               {/* Task management */}
-  <AddDirCommand />          {/* Runtime mount */}
-
-  {children}                 {/* Agent-specific behavior */}
+  <Identity /> {/* ~/.tentickle/IDENTITY.md */}
+  <UserContext /> {/* ~/.tentickle/user/*.md */}
+  <DynamicModel /> {/* Provider selection */}
+  <Knobs /> {/* Reactive state controls */}
+  <WorkspaceGrounding /> {/* package.json, git branch, scripts */}
+  <ProjectConventions /> {/* CLAUDE.md or AGENTS.md */}
+  <ClaudeMemory /> {/* Claude Code's MEMORY.md (read-only) */}
+  <Skills /> {/* Discovered SKILL.md files */}
+  <EntityAwareness /> {/* Entity profile index */}
+  <Rules /> {/* Global + project rules */}
+  <Memory /> {/* Project MEMORY.md */}
+  <EnhancedTimeline /> {/* Conversation history */}
+  <SandboxTools /> {/* Shell, read, write, edit */}
+  <Glob /> {/* File search */}
+  <Grep /> {/* Content search */}
+  <TaskTool /> {/* Task management */}
+  <AddDirCommand /> {/* Runtime mount */}
+  {children} {/* Agent-specific behavior */}
 </TentickleAgent>
 ```
 
