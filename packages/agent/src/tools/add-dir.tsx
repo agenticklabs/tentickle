@@ -1,9 +1,9 @@
-import { createTool } from "@agentick/core";
+import { createTool, type ToolClass } from "@agentick/core";
 import { useSandbox } from "@agentick/sandbox";
 import { z } from "zod";
 import { resolve } from "node:path";
 
-export const AddDirCommand = createTool({
+export const AddDirCommand: ToolClass = createTool({
   name: "add-dir",
   description: "Mount a directory into the sandbox",
   input: z.object({ path: z.string().describe("Directory path to mount") }),

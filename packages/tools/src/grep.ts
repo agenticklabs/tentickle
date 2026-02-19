@@ -1,4 +1,4 @@
-import { createTool } from "@agentick/core";
+import { createTool, type ToolClass } from "@agentick/core";
 import { useSandbox } from "@agentick/sandbox";
 import { z } from "zod";
 import { readdir, readFile } from "node:fs/promises";
@@ -91,7 +91,7 @@ async function searchDir(
   }
 }
 
-export const Grep = createTool({
+export const Grep: ToolClass = createTool({
   name: "grep",
   description:
     "Search file contents for a regex pattern. Returns matching lines with file paths and line numbers. Skips binary files, node_modules, and dotfiles.",

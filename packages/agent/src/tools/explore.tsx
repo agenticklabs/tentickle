@@ -1,5 +1,5 @@
 import { createTool } from "@agentick/core";
-import type { ComponentFunction } from "@agentick/core";
+import type { ComponentFunction, ToolClass } from "@agentick/core";
 import { z } from "zod";
 
 /**
@@ -10,7 +10,7 @@ import { z } from "zod";
  *
  * @param Agent - The component to spawn. Typically the same agent (self-spawn).
  */
-export function createExploreTool(Agent: ComponentFunction) {
+export function createExploreTool(Agent: ComponentFunction): ToolClass {
   return createTool({
     name: "explore",
     description:

@@ -1,4 +1,4 @@
-import { createTool } from "@agentick/core";
+import { createTool, type ToolClass } from "@agentick/core";
 import { useSandbox } from "@agentick/sandbox";
 import { z } from "zod";
 import { readdir } from "node:fs/promises";
@@ -40,7 +40,7 @@ async function walkAndMatch(
   }
 }
 
-export const Glob = createTool({
+export const Glob: ToolClass = createTool({
   name: "glob",
   description:
     "Find files matching a glob pattern. Use ** for recursive matching, * for single-level. Skips node_modules and dotfiles.",

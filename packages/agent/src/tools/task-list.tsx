@@ -1,5 +1,5 @@
 import React from "react";
-import { createTool, Section } from "@agentick/core";
+import { createTool, Section, type ToolClass } from "@agentick/core";
 import { z } from "zod";
 import { type Task, type TaskStore } from "../task-store.js";
 
@@ -14,7 +14,7 @@ function formatTaskList(tasks: Task[]): string {
   return tasks.map((t) => `[${STATUS_LABELS[t.status]}] #${t.id}: ${t.title}`).join("\n");
 }
 
-export function createTaskTool(store: TaskStore) {
+export function createTaskTool(store: TaskStore): ToolClass {
   return createTool({
     name: "task_list",
     description:

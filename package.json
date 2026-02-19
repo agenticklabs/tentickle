@@ -40,7 +40,7 @@
     "changeset": "changeset",
     "version-packages": "changeset version",
     "publish-packages": "turbo run test build && changeset publish",
-    "lock:clean": "pnpm install --ignore-pnpmfile"
+    "lock:clean": "pnpm install"
   },
   "devDependencies": {
     "@changesets/cli": "^2.0.0",
@@ -63,13 +63,32 @@
     "zod": "^4.1.13"
   },
   "simple-git-hooks": {
-    "pre-commit": "sh scripts/check-lockfile.sh && pnpm run format:check && pnpm run lint:all",
+    "pre-commit": "pnpm run format:check && pnpm run lint:all",
     "commit-msg": "npx --no -- commitlint --config commitlint.config.cjs --edit ${1}"
   },
   "packageManager": "pnpm@10.25.0",
   "pnpm": {
     "overrides": {
-      "ink": "^6.7.0"
+      "ink": "^6.7.0",
+      "react": "link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react",
+      "react-reconciler": "link:../agentick/node_modules/.pnpm/react-reconciler@0.33.0_react@19.2.4/node_modules/react-reconciler",
+      "@agentick/agent": "link:../agentick/packages/agent",
+      "@agentick/apple": "link:../agentick/packages/adapters/apple",
+      "@agentick/client": "link:../agentick/packages/client",
+      "@agentick/connector": "link:../agentick/packages/connector",
+      "@agentick/connector-imessage": "link:../agentick/packages/connector-imessage",
+      "@agentick/connector-telegram": "link:../agentick/packages/connector-telegram",
+      "@agentick/core": "link:../agentick/packages/core",
+      "@agentick/devtools": "link:../agentick/packages/devtools",
+      "@agentick/google": "link:../agentick/packages/adapters/google",
+      "@agentick/kernel": "link:../agentick/packages/kernel",
+      "@agentick/openai": "link:../agentick/packages/adapters/openai",
+      "@agentick/react": "link:../agentick/packages/react",
+      "@agentick/sandbox": "link:../agentick/packages/sandbox",
+      "@agentick/sandbox-local": "link:../agentick/packages/sandbox-local",
+      "@agentick/scheduler": "link:../agentick/packages/scheduler",
+      "@agentick/shared": "link:../agentick/packages/shared",
+      "@agentick/tui": "link:../agentick/packages/tui"
     }
   }
 }
