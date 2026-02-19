@@ -69,7 +69,7 @@
   "packageManager": "pnpm@10.25.0",
   "pnpm": {
     "overrides": {
-      "react-reconciler": "0.31.0"
+      "ink": "^6.7.0"
     }
   }
 }
