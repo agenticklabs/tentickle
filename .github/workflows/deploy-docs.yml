@@ -18,13 +18,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install
+      # Local dev overrides link to sibling agentick repo — strip for CI
+      - name: Strip local dev overrides
+        run: node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); delete p.pnpm?.overrides; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
+      - run: pnpm install --no-frozen-lockfile
       - name: Build packages
         run: pnpm build --filter '!tentickle-website'
       - name: Build website (with API docs)

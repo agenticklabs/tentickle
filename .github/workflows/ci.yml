@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [22]
+        node-version: [24]
 
     steps:
       - uses: actions/checkout@v6
@@ -25,8 +25,12 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
 
+      # Local dev overrides link to sibling agentick repo — strip for CI
+      - name: Strip local dev overrides
+        run: node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); delete p.pnpm?.overrides; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-pnpmfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Type check
         run: pnpm typecheck
@@ -48,11 +52,15 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: "pnpm"
 
+      # Local dev overrides link to sibling agentick repo — strip for CI
+      - name: Strip local dev overrides
+        run: node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); delete p.pnpm?.overrides; fs.writeFileSync('package.json', JSON.stringify(p,null,2)+'\n')"
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-pnpmfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Lint
         run: pnpm lint
