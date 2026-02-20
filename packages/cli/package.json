@@ -49,7 +49,7 @@
     "@agentick/connector-telegram": "*",
     "@agentick/devtools": "^0.9.0",
     "@agentick/gateway": "^0.9.0",
-    "@agentick/scheduler": "^0.7.1",
+    "@agentick/scheduler": "^0.9.0",
     "@tentickle/agent": "workspace:*",
     "@tentickle/coding": "workspace:*",
     "@tentickle/main": "workspace:*",
