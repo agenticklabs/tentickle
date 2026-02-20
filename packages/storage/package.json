@@ -1,0 +1,45 @@
+{
+  "name": "@tentickle/storage",
+  "version": "0.0.3",
+  "description": "Session persistence — SQLite storage with schema versioning",
+  "license": "MIT",
+  "author": "Ryan Lindgren",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agenticklabs/tentickle.git",
+    "directory": "packages/storage"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json && cp -r src/migrations dist/migrations",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src/",
+    "format:check": "oxfmt --check src/",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@agentick/core": "^0.8.0",
+    "@agentick/shared": "^0.8.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -15,6 +15,8 @@ import { Skills } from "./skills.js";
 import { EnhancedTimeline } from "./timeline.js";
 import { TaskStore, bindTaskStore } from "./task-store.js";
 import { createTaskTool } from "./tools/task-list.js";
+import { createRememberTool, createRecallTool, getMemory } from "@tentickle/memory";
+import type { TentickleMemory } from "@tentickle/memory";
 import { AddDirCommand } from "./tools/add-dir.js";
 import { UserContext } from "./user-context.js";
 import { EntityAwareness } from "./entities.js";
@@ -30,6 +32,7 @@ interface TentickleContext {
   taskStore: TaskStore;
   settings: TentickleSettings;
   workspace: string;
+  memory: TentickleMemory | null;
 }
 
 const TentickleCtx = createContext<TentickleContext | null>(null);
@@ -64,6 +67,8 @@ export interface TentickleAgentProps {
   limits?: ResourceLimits;
   /** Load ~/.tentickle/IDENTITY.md into context. Default: true. */
   identity?: boolean;
+  /** Cross-session memory instance (created by createTentickleApp). */
+  memory?: TentickleMemory;
   children: React.ReactNode;
 }
 
@@ -88,6 +93,7 @@ export function TentickleAgent({
   env,
   limits,
   identity = true,
+  memory,
   children,
 }: TentickleAgentProps) {
   // Scaffold global data dir (idempotent)
@@ -122,6 +128,17 @@ export function TentickleAgent({
   const [taskStore] = useState(() => new TaskStore());
   const TaskTool = useMemo(() => createTaskTool(taskStore), [taskStore]);
 
+  // Memory tools — prop takes precedence, falls back to global binding
+  const resolvedMemory = memory ?? getMemory();
+  const RememberTool = useMemo(
+    () => (resolvedMemory ? createRememberTool(resolvedMemory) : null),
+    [resolvedMemory],
+  );
+  const RecallTool = useMemo(
+    () => (resolvedMemory ? createRecallTool(resolvedMemory) : null),
+    [resolvedMemory],
+  );
+
   return (
     <Sandbox
       provider={provider ?? localProvider()}
@@ -131,7 +148,7 @@ export function TentickleAgent({
       env={env}
       limits={limits}
     >
-      <TentickleCtx value={{ taskStore, settings, workspace }}>
+      <TentickleCtx value={{ taskStore, settings, workspace, memory: resolvedMemory }}>
         <TaskStoreBridge store={taskStore} />
         {identity && <Identity />}
         <UserContext />
@@ -153,6 +170,8 @@ export function TentickleAgent({
         <Grep />
         <TaskTool />
         <AddDirCommand />
+        {RememberTool && <RememberTool />}
+        {RecallTool && <RecallTool />}
 
         {children}
       </TentickleCtx>

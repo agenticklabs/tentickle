@@ -1,13 +1,13 @@
 {
-  "name": "@tentickle/agent",
+  "name": "@tentickle/memory",
   "version": "0.0.3",
-  "description": "Base agent component — identity, memory, sandbox, tools",
+  "description": "Cross-session semantic memory — FTS5 + optional vector search",
   "license": "MIT",
   "author": "Ryan Lindgren",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agenticklabs/tentickle.git",
-    "directory": "packages/agent"
+    "directory": "packages/memory"
   },
   "files": [
     "dist"
@@ -29,27 +29,16 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.build.json",
+    "build": "tsc -b tsconfig.build.json && cp -r src/migrations dist/migrations",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
     "format:check": "oxfmt --check src/",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agentick/apple": "^0.8.0",
-    "@agentick/client": "^0.8.0",
-    "@agentick/connector": "^0.8.0",
-    "@agentick/connector-imessage": "^0.8.0",
     "@agentick/core": "^0.8.0",
-    "@agentick/google": "^0.8.0",
-    "@agentick/huggingface": "^0.8.0",
-    "@agentick/openai": "^0.8.0",
-    "@agentick/sandbox": "^0.8.0",
-    "@agentick/sandbox-local": "^0.8.0",
     "@agentick/shared": "^0.8.0",
-    "@tentickle/memory": "workspace:*",
-    "@tentickle/storage": "workspace:*",
-    "@tentickle/tools": "workspace:*",
+    "sqlite-vec": "^0.1.7-alpha.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {

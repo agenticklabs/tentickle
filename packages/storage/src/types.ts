@@ -1,4 +1,4 @@
-/** Internal row types matching SQL columns. Not exported from package. */
+/** Internal row types matching SQL columns. */
 
 export interface SessionRow {
   id: string;

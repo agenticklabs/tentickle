@@ -48,13 +48,36 @@ export {
 
 // App factory
 export { createTentickleApp } from "./app.js";
-export type { TentickleAppResult } from "./app.js";
+export type { TentickleAppOptions, TentickleAppResult } from "./app.js";
 
-// Session store binding (global ref for TUI bridge)
-export { bindSessionStore, getSessionStore } from "./session-store-binding.js";
+// Storage (re-export from @tentickle/storage)
+export {
+  openDatabase,
+  TentickleSessionStore,
+  ensureStorageSchema,
+  bindSessionStore,
+  getSessionStore,
+} from "@tentickle/storage";
+export type { OpenDatabaseOptions } from "@tentickle/storage";
 
-// Storage
-export { openDatabase, TentickleSessionStore } from "./storage/index.js";
+// Memory (re-export from @tentickle/memory)
+export {
+  TentickleMemory,
+  ensureMemorySchema,
+  bindMemory,
+  getMemory,
+  createRememberTool,
+  createRecallTool,
+} from "@tentickle/memory";
+export type {
+  EmbedFn,
+  VecOptions,
+  RememberInput,
+  MemoryEntry,
+  RecallQuery,
+  RecallResult,
+  ScoredMemoryEntry,
+} from "@tentickle/memory";
 
 // Settings
 export {

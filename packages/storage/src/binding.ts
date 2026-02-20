@@ -1,4 +1,4 @@
-import type { TentickleSessionStore } from "./storage/index.js";
+import type { TentickleSessionStore } from "./session-store.js";
 
 let _sessionStore: TentickleSessionStore | null = null;
 

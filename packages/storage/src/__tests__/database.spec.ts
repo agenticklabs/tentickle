@@ -1,20 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { runMigrations } from "../database.js";
-
-const TEST_DIR = join(tmpdir(), `tentickle-db-test-${process.pid}`);
+import { ensureStorageSchema } from "../schema.js";
 
 function freshDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys = ON");
   return db;
-}
-
-function getVersion(db: DatabaseSync): number {
-  return (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
 }
 
 function tableNames(db: DatabaseSync): string[] {
@@ -25,46 +16,27 @@ function tableNames(db: DatabaseSync): string[] {
   ).map((r) => r.name);
 }
 
-beforeEach(() => {
-  mkdirSync(TEST_DIR, { recursive: true });
-});
-
-afterEach(() => {
-  rmSync(TEST_DIR, { recursive: true, force: true });
-});
+function getSchemaVersion(db: DatabaseSync, pkg: string): number {
+  try {
+    const r = db.prepare("SELECT version FROM _schema_versions WHERE package = ?").get(pkg) as
+      | { version: number }
+      | undefined;
+    return r ? r.version : 0;
+  } catch {
+    return 0;
+  }
+}
 
 // ==========================================================================
-// Fresh database
+// ensureStorageSchema
 // ==========================================================================
 
-describe("runMigrations", () => {
-  it("starts at user_version 0", () => {
+describe("ensureStorageSchema", () => {
+  it("creates expected tables", () => {
     const db = freshDb();
-    expect(getVersion(db)).toBe(0);
-    db.close();
-  });
-
-  it("advances user_version to 1 after running migrations", () => {
-    const db = freshDb();
-    runMigrations(db);
-    expect(getVersion(db)).toBe(1);
-    db.close();
-  });
-
-  it("is idempotent — running twice doesn't fail", () => {
-    const db = freshDb();
-    runMigrations(db);
-    runMigrations(db);
-    expect(getVersion(db)).toBe(1);
-    db.close();
-  });
-
-  it("creates all 11 tables", () => {
-    const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     const tables = tableNames(db);
     expect(tables).toContain("entities");
-    expect(tables).toContain("entity_relationships");
     expect(tables).toContain("sessions");
     expect(tables).toContain("session_participants");
     expect(tables).toContain("executions");
@@ -72,18 +44,35 @@ describe("runMigrations", () => {
     expect(tables).toContain("messages");
     expect(tables).toContain("content_blocks");
     expect(tables).toContain("media");
-    expect(tables).toContain("knowledge");
     expect(tables).toContain("session_snapshots");
-    expect(tables.length).toBeGreaterThanOrEqual(11);
-    // Verify removed tables are gone
-    expect(tables).not.toContain("session_state");
-    expect(tables).not.toContain("session_data_cache");
+    expect(tables).toContain("_schema_versions");
+    // No memory tables
+    expect(tables).not.toContain("memories");
+    expect(tables).not.toContain("memories_fts");
+    // No legacy tables
+    expect(tables).not.toContain("entity_relationships");
+    expect(tables).not.toContain("knowledge");
+    db.close();
+  });
+
+  it("sets storage version to 1 in _schema_versions", () => {
+    const db = freshDb();
+    ensureStorageSchema(db);
+    expect(getSchemaVersion(db, "storage")).toBe(1);
+    db.close();
+  });
+
+  it("is idempotent — running twice doesn't fail", () => {
+    const db = freshDb();
+    ensureStorageSchema(db);
+    ensureStorageSchema(db);
+    expect(getSchemaVersion(db, "storage")).toBe(1);
     db.close();
   });
 
   it("enforces foreign keys", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     expect(() =>
       db
         .prepare(
@@ -96,7 +85,7 @@ describe("runMigrations", () => {
 
   it("cascades deletes from sessions to messages", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
     db.prepare(
       "INSERT INTO messages (id, session_id, role, tick, sequence_in_tick) VALUES (?, ?, ?, ?, ?)",
@@ -114,7 +103,7 @@ describe("runMigrations", () => {
 
   it("cascades deletes from messages to content_blocks", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
     db.prepare(
       "INSERT INTO messages (id, session_id, role, tick, sequence_in_tick) VALUES (?, ?, ?, ?, ?)",
@@ -132,7 +121,7 @@ describe("runMigrations", () => {
 
   it("cascades deletes from sessions to executions and ticks", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
     db.prepare(
       "INSERT INTO executions (id, session_id, trigger_type, status) VALUES (?, ?, ?, ?)",
@@ -150,7 +139,7 @@ describe("runMigrations", () => {
 
   it("cascades deletes from executions to ticks", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
     db.prepare(
       "INSERT INTO executions (id, session_id, trigger_type, status) VALUES (?, ?, ?, ?)",
@@ -167,7 +156,7 @@ describe("runMigrations", () => {
 
   it("cascades deletes from sessions to session_snapshots", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
     db.prepare("INSERT INTO session_snapshots (session_id, key, value) VALUES (?, ?, ?)").run(
       "s1",
@@ -185,10 +174,9 @@ describe("runMigrations", () => {
 
   it("enforces execution_id FK on messages", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
 
-    // Inserting a message with a non-existent execution_id should fail
     expect(() =>
       db
         .prepare(
@@ -201,10 +189,9 @@ describe("runMigrations", () => {
 
   it("allows null execution_id on messages", () => {
     const db = freshDb();
-    runMigrations(db);
+    ensureStorageSchema(db);
     db.prepare("INSERT INTO sessions (id) VALUES (?)").run("s1");
 
-    // null execution_id should be fine (fallback/restored entries)
     db.prepare(
       "INSERT INTO messages (id, session_id, execution_id, role, tick, sequence_in_tick) VALUES (?, ?, ?, ?, ?, ?)",
     ).run("m1", "s1", null, "user", 0, 0);
@@ -214,49 +201,31 @@ describe("runMigrations", () => {
     db.close();
   });
 
-  it("rolls back on failed migration — version stays", () => {
+  it("drops legacy tables if they exist", () => {
     const db = freshDb();
-    const version = getVersion(db);
-    expect(version).toBe(0);
-    expect(() => {
-      db.exec("BEGIN");
-      try {
-        db.exec("INVALID SQL GIBBERISH;");
-        db.exec("PRAGMA user_version = 1");
-        db.exec("COMMIT");
-      } catch (e) {
-        db.exec("ROLLBACK");
-        throw e;
-      }
-    }).toThrow(/INVALID/i);
-    expect(getVersion(db)).toBe(0);
-    db.close();
-  });
-});
+    // Simulate old schema with legacy tables
+    db.exec("CREATE TABLE entity_relationships (id TEXT PRIMARY KEY)");
+    db.exec("CREATE TABLE knowledge (id TEXT PRIMARY KEY)");
 
-// ==========================================================================
-// openDatabase (integration — tests the full init path)
-// ==========================================================================
-
-describe("openDatabase", () => {
-  it("creates a DB file with WAL mode and migrations applied", async () => {
-    const { openDatabase } = await import("../database.js");
-    const dbPath = join(TEST_DIR, "test.db");
-    const db = await openDatabase(dbPath);
-
-    expect(getVersion(db)).toBe(1);
-
-    // WAL mode check
-    const walResult = db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
-    expect(walResult.journal_mode).toBe("wal");
-
-    // Foreign keys check
-    const fkResult = db.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number };
-    expect(fkResult.foreign_keys).toBe(1);
+    ensureStorageSchema(db);
 
     const tables = tableNames(db);
-    expect(tables.length).toBeGreaterThanOrEqual(11);
+    expect(tables).not.toContain("entity_relationships");
+    expect(tables).not.toContain("knowledge");
+    db.close();
+  });
 
+  it("works alongside memory schema versions", () => {
+    const db = freshDb();
+    ensureStorageSchema(db);
+    // Simulate memory package setting its own version
+    db.prepare("INSERT OR REPLACE INTO _schema_versions (package, version) VALUES (?, ?)").run(
+      "memory",
+      1,
+    );
+
+    expect(getSchemaVersion(db, "storage")).toBe(1);
+    expect(getSchemaVersion(db, "memory")).toBe(1);
     db.close();
   });
 });

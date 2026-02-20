@@ -1,13 +1,12 @@
--- Tentickle normalized storage — initial schema
--- 11 tables: 4 domain (entities, entity_relationships, knowledge, messages)
---            7 infrastructure (sessions, session_participants, session_snapshots,
---                              executions, ticks, content_blocks, media)
+-- Tentickle storage — session persistence schema
+-- Tables: entities, sessions, session_participants, executions, ticks,
+--         messages, content_blocks, media, session_snapshots
 
 -- ==========================================================================
 -- Entities — people, models, agents, orgs, projects, things
 -- ==========================================================================
 
-CREATE TABLE entities (
+CREATE TABLE IF NOT EXISTS entities (
   id          TEXT PRIMARY KEY,
   type        TEXT NOT NULL,
   name        TEXT NOT NULL,
@@ -18,31 +17,13 @@ CREATE TABLE entities (
   updated_at  INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
 );
 
-CREATE INDEX idx_entities_type ON entities(type);
-
--- ==========================================================================
--- Entity Relationships — typed directed edges (the knowledge graph)
--- ==========================================================================
-
-CREATE TABLE entity_relationships (
-  source_entity_id  TEXT NOT NULL REFERENCES entities(id),
-  target_entity_id  TEXT NOT NULL REFERENCES entities(id),
-  relationship      TEXT NOT NULL,
-  confidence        REAL DEFAULT 1.0,
-  source_session_id TEXT REFERENCES sessions(id),
-  metadata          TEXT DEFAULT '{}',
-  created_at        INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000),
-  PRIMARY KEY (source_entity_id, target_entity_id, relationship)
-);
-
-CREATE INDEX idx_entity_rels_source ON entity_relationships(source_entity_id);
-CREATE INDEX idx_entity_rels_target ON entity_relationships(target_entity_id);
+CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
 
 -- ==========================================================================
 -- Sessions — conversation contexts
 -- ==========================================================================
 
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
   id                    TEXT PRIMARY KEY,
   parent_session_id     TEXT REFERENCES sessions(id),
   session_type          TEXT NOT NULL DEFAULT 'chat'
@@ -59,15 +40,15 @@ CREATE TABLE sessions (
   updated_at            INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
 );
 
-CREATE INDEX idx_sessions_parent  ON sessions(parent_session_id);
-CREATE INDEX idx_sessions_status  ON sessions(status);
-CREATE INDEX idx_sessions_updated ON sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_parent  ON sessions(parent_session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_status  ON sessions(status);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
 
 -- ==========================================================================
 -- Session Participants — which entities are in which sessions
 -- ==========================================================================
 
-CREATE TABLE session_participants (
+CREATE TABLE IF NOT EXISTS session_participants (
   session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   entity_id   TEXT NOT NULL REFERENCES entities(id),
   role        TEXT NOT NULL DEFAULT 'member'
@@ -81,7 +62,7 @@ CREATE TABLE session_participants (
 -- Executions — tracks each user interaction / heartbeat / dispatch
 -- ==========================================================================
 
-CREATE TABLE executions (
+CREATE TABLE IF NOT EXISTS executions (
   id            TEXT PRIMARY KEY,
   session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   trigger_type  TEXT NOT NULL DEFAULT 'unknown',
@@ -92,13 +73,13 @@ CREATE TABLE executions (
   completed_at  INTEGER
 );
 
-CREATE INDEX idx_executions_session ON executions(session_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_executions_session ON executions(session_id, started_at DESC);
 
 -- ==========================================================================
 -- Ticks — per-tick metrics with model + usage for cost tracking
 -- ==========================================================================
 
-CREATE TABLE ticks (
+CREATE TABLE IF NOT EXISTS ticks (
   execution_id  TEXT NOT NULL REFERENCES executions(id) ON DELETE CASCADE,
   tick_number   INTEGER NOT NULL,
   model         TEXT,
@@ -113,7 +94,7 @@ CREATE TABLE ticks (
 -- Messages — timeline entries
 -- ==========================================================================
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
   id                TEXT PRIMARY KEY,
   session_id        TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   entity_id         TEXT REFERENCES entities(id),
@@ -129,15 +110,15 @@ CREATE TABLE messages (
   created_at        INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
 );
 
-CREATE INDEX idx_messages_session   ON messages(session_id, tick, sequence_in_tick);
-CREATE INDEX idx_messages_entity    ON messages(entity_id);
-CREATE INDEX idx_messages_execution ON messages(execution_id);
+CREATE INDEX IF NOT EXISTS idx_messages_session   ON messages(session_id, tick, sequence_in_tick);
+CREATE INDEX IF NOT EXISTS idx_messages_entity    ON messages(entity_id);
+CREATE INDEX IF NOT EXISTS idx_messages_execution ON messages(execution_id);
 
 -- ==========================================================================
 -- Content Blocks — decomposed message content
 -- ==========================================================================
 
-CREATE TABLE content_blocks (
+CREATE TABLE IF NOT EXISTS content_blocks (
   id            TEXT PRIMARY KEY,
   message_id    TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   position      INTEGER NOT NULL,
@@ -147,13 +128,13 @@ CREATE TABLE content_blocks (
   metadata      TEXT
 );
 
-CREATE INDEX idx_blocks_message ON content_blocks(message_id, position);
+CREATE INDEX IF NOT EXISTS idx_blocks_message ON content_blocks(message_id, position);
 
 -- ==========================================================================
 -- Media — deduplicated files
 -- ==========================================================================
 
-CREATE TABLE media (
+CREATE TABLE IF NOT EXISTS media (
   id            TEXT PRIMARY KEY,
   content_hash  TEXT NOT NULL UNIQUE,
   filename      TEXT,
@@ -167,37 +148,14 @@ CREATE TABLE media (
   created_at    INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
 );
 
-CREATE INDEX idx_media_hash   ON media(content_hash);
-CREATE INDEX idx_media_entity ON media(entity_id);
-
--- ==========================================================================
--- Knowledge — append-only knowledge log
--- ==========================================================================
-
-CREATE TABLE knowledge (
-  id                TEXT PRIMARY KEY,
-  entity_id         TEXT REFERENCES entities(id),
-  lineage_id        TEXT,
-  topic             TEXT NOT NULL,
-  title             TEXT NOT NULL,
-  content           TEXT NOT NULL,
-  confidence        REAL DEFAULT 1.0,
-  source_session_id TEXT REFERENCES sessions(id),
-  source_message_id TEXT REFERENCES messages(id),
-  access_count      INTEGER DEFAULT 0,
-  created_at        INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
-);
-
-CREATE INDEX idx_knowledge_entity  ON knowledge(entity_id);
-CREATE INDEX idx_knowledge_topic   ON knowledge(topic);
-CREATE INDEX idx_knowledge_lineage ON knowledge(lineage_id, created_at DESC);
-CREATE INDEX idx_knowledge_created ON knowledge(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_media_hash   ON media(content_hash);
+CREATE INDEX IF NOT EXISTS idx_media_entity ON media(entity_id);
 
 -- ==========================================================================
 -- Session Snapshots — flexible KV for comState and other session data
 -- ==========================================================================
 
-CREATE TABLE session_snapshots (
+CREATE TABLE IF NOT EXISTS session_snapshots (
   session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   key         TEXT NOT NULL,
   value       TEXT NOT NULL,

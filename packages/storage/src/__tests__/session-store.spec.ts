@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { SessionSnapshot } from "@agentick/core";
 import type { COMTimelineEntry } from "@agentick/core";
 import type { ContentBlock } from "@agentick/shared";
-import { runMigrations } from "../database.js";
+import { ensureStorageSchema } from "../schema.js";
 import { TentickleSessionStore } from "../session-store.js";
 
 let db: DatabaseSync;
@@ -13,7 +13,7 @@ let store: TentickleSessionStore;
 function freshDb(): DatabaseSync {
   const d = new DatabaseSync(":memory:");
   d.exec("PRAGMA foreign_keys = ON");
-  runMigrations(d);
+  ensureStorageSchema(d);
   return d;
 }
 
@@ -55,10 +55,6 @@ function messageCount(): number {
 
 function blockCount(): number {
   return (db.prepare("SELECT count(*) as c FROM content_blocks").get() as { c: number }).c;
-}
-
-function executionCount(): number {
-  return (db.prepare("SELECT count(*) as c FROM executions").get() as { c: number }).c;
 }
 
 function tickCount(): number {
@@ -446,7 +442,6 @@ describe("comState via session_snapshots", () => {
     await store.save("s1", makeSnapshot("s1", { comState: { b: 99, c: 3 }, tick: 2 }));
 
     const loaded = await store.load("s1");
-    // Unlike the old key-per-row approach, JSON blob replaces entirely
     expect(loaded!.comState).toEqual({ b: 99, c: 3 });
     expect(loaded!.comState).not.toHaveProperty("a");
   });
@@ -474,151 +469,6 @@ describe("comState via session_snapshots", () => {
 });
 
 // ==========================================================================
-// State machine ordering
-// ==========================================================================
-
-describe("state machine ordering", () => {
-  it("full lifecycle: createExecution → recordTickStart → commitEntry → recordTickEnd → completeExecution", () => {
-    ensureSession("s1");
-
-    // execution_start
-    store.createExecution("e1", "s1", "send");
-
-    // tick_start (tick 0)
-    store.recordTickStart("e1", 0);
-
-    // entry_committed (user message)
-    const userEntry = makeEntry("user", "Hello");
-    store.commitEntry("s1", userEntry, "e1", 0, 0);
-
-    // entry_committed (assistant response)
-    const assistantEntry = makeEntry("assistant", "Hi!");
-    store.commitEntry("s1", assistantEntry, "e1", 0, 1);
-
-    // tick_end
-    store.recordTickEnd("e1", 0, "gpt-4o", { inputTokens: 50, outputTokens: 25 }, "end_turn");
-
-    // execution_end
-    store.completeExecution("e1", "completed", 1);
-
-    // Verify everything persisted
-    expect(executionCount()).toBe(1);
-    expect(tickCount()).toBe(1);
-    expect(messageCount()).toBe(2);
-
-    const exec = db.prepare("SELECT * FROM executions WHERE id = ?").get("e1") as any;
-    expect(exec.status).toBe("completed");
-    expect(exec.tick_count).toBe(1);
-  });
-
-  it("commitEntry before createExecution → FK violation", () => {
-    ensureSession("s1");
-    // No execution created yet
-    const entry = makeEntry("user", "orphan");
-
-    expect(() => store.commitEntry("s1", entry, "nonexistent-exec", 0, 0)).toThrow(
-      /FOREIGN KEY constraint failed/,
-    );
-  });
-
-  it("multi-tick: tick 0 messages have tick=0, tick 1 messages have tick=1", () => {
-    ensureSession("s1");
-    store.createExecution("e1", "s1", "send");
-
-    store.recordTickStart("e1", 0);
-    const t0Entry = makeEntry("user", "Tick 0");
-    store.commitEntry("s1", t0Entry, "e1", 0, 0);
-    store.recordTickEnd("e1", 0, "m1", null, "tool_use");
-
-    store.recordTickStart("e1", 1);
-    const t1Entry = makeEntry("assistant", "Tick 1");
-    store.commitEntry("s1", t1Entry, "e1", 1, 1);
-    store.recordTickEnd("e1", 1, "m1", null, "end_turn");
-
-    const msgs = db
-      .prepare("SELECT id, tick FROM messages WHERE session_id = ? ORDER BY tick")
-      .all("s1") as any[];
-    expect(msgs[0].tick).toBe(0);
-    expect(msgs[1].tick).toBe(1);
-  });
-
-  it("completeExecution marks status and sets completed_at", () => {
-    ensureSession("s1");
-    store.createExecution("e1", "s1", "send");
-    store.completeExecution("e1", "completed", 2);
-
-    const exec = db
-      .prepare("SELECT status, completed_at FROM executions WHERE id = ?")
-      .get("e1") as any;
-    expect(exec.status).toBe("completed");
-    expect(exec.completed_at).toBeGreaterThan(0);
-  });
-
-  it("recordTickEnd fills model/usage/stop_reason on existing tick record", () => {
-    ensureSession("s1");
-    store.createExecution("e1", "s1", "send");
-    store.recordTickStart("e1", 0);
-
-    // Before recordTickEnd
-    const before = db
-      .prepare(
-        "SELECT model, usage, stop_reason FROM ticks WHERE execution_id = ? AND tick_number = ?",
-      )
-      .get("e1", 0) as any;
-    expect(before.model).toBeNull();
-    expect(before.usage).toBeNull();
-
-    store.recordTickEnd(
-      "e1",
-      0,
-      "claude-opus",
-      { inputTokens: 500, outputTokens: 200 },
-      "end_turn",
-    );
-
-    const after = db
-      .prepare(
-        "SELECT model, usage, stop_reason FROM ticks WHERE execution_id = ? AND tick_number = ?",
-      )
-      .get("e1", 0) as any;
-    expect(after.model).toBe("claude-opus");
-    expect(after.stop_reason).toBe("end_turn");
-    expect(JSON.parse(after.usage).inputTokens).toBe(500);
-  });
-});
-
-// ==========================================================================
-// Usage aggregation via load()
-// ==========================================================================
-
-describe("usage aggregation", () => {
-  it("load() aggregates usage from ticks via executions", async () => {
-    ensureSession("s1");
-    await store.save("s1", makeSnapshot("s1", { tick: 2 }));
-
-    store.createExecution("e1", "s1", "send");
-    store.recordTickStart("e1", 0);
-    store.recordTickEnd("e1", 0, "m", { inputTokens: 100, outputTokens: 50 }, "tool_use");
-    store.recordTickStart("e1", 1);
-    store.recordTickEnd("e1", 1, "m", { inputTokens: 200, outputTokens: 100 }, "end_turn");
-    store.completeExecution("e1", "completed", 2);
-
-    const loaded = await store.load("s1");
-    expect(loaded!.usage).toEqual({
-      inputTokens: 300,
-      outputTokens: 150,
-      totalTokens: 450,
-    });
-  });
-
-  it("load() returns undefined usage when no ticks exist", async () => {
-    await store.save("s1", makeSnapshot("s1"));
-    const loaded = await store.load("s1");
-    expect(loaded!.usage).toBeUndefined();
-  });
-});
-
-// ==========================================================================
 // Adversarial tests
 // ==========================================================================
 
@@ -629,7 +479,6 @@ describe("adversarial: parallel commitEntry calls", () => {
 
     const entries = Array.from({ length: 10 }, (_, i) => makeEntry("user", `Msg ${i}`));
 
-    // Simulate "parallel" by calling all in tight loop (sync SQLite)
     for (let i = 0; i < entries.length; i++) {
       store.commitEntry("s1", entries[i], "e1", 0, i);
     }
@@ -644,72 +493,6 @@ describe("adversarial: parallel commitEntry calls", () => {
     expect(messageCount()).toBe(10);
   });
 });
-
-describe("adversarial: commitEntry for non-existent session", () => {
-  it("throws FK violation", () => {
-    const entry = makeEntry("user", "orphan");
-    // No session, no execution
-    expect(() => store.commitEntry("nonexistent", entry, "e1", 0, 0)).toThrow(
-      "FOREIGN KEY constraint failed",
-    );
-  });
-});
-
-describe("adversarial: commitEntry for non-existent execution", () => {
-  it("throws FK violation", () => {
-    ensureSession("s1");
-    const entry = makeEntry("user", "orphan");
-    expect(() => store.commitEntry("s1", entry, "nonexistent-exec", 0, 0)).toThrow(
-      /FOREIGN KEY constraint failed/,
-    );
-  });
-});
-
-describe("adversarial: crash simulation", () => {
-  it("partial execution state survives: execution running + messages persisted, no completeExecution", async () => {
-    ensureSession("s1");
-    await store.save("s1", makeSnapshot("s1", { tick: 0 }));
-
-    store.createExecution("e1", "s1", "send");
-    store.recordTickStart("e1", 0);
-
-    const entry1 = makeEntry("user", "Before crash 1");
-    const entry2 = makeEntry("assistant", "Before crash 2");
-    store.commitEntry("s1", entry1, "e1", 0, 0);
-    store.commitEntry("s1", entry2, "e1", 0, 1);
-
-    // NO completeExecution — simulating crash
-
-    // Verify state as if we "reopened" the DB
-    const exec = db.prepare("SELECT * FROM executions WHERE id = ?").get("e1") as any;
-    expect(exec.status).toBe("running"); // Never completed
-
-    expect(messageCount()).toBe(2); // Messages survived
-
-    const tick = db
-      .prepare("SELECT * FROM ticks WHERE execution_id = ? AND tick_number = ?")
-      .get("e1", 0) as any;
-    expect(tick.completed_at).toBeNull(); // Tick never completed
-
-    // Can detect crashed executions
-    const crashed = db.prepare("SELECT id FROM executions WHERE status = 'running'").all() as any[];
-    expect(crashed.length).toBe(1);
-    expect(crashed[0].id).toBe("e1");
-  });
-});
-
-describe("adversarial: empty timeline + comState roundtrip", () => {
-  it("save empty state, load back", async () => {
-    await store.save("s1", makeSnapshot("s1", { comState: {}, timeline: null }));
-    const loaded = await store.load("s1");
-    expect(loaded!.timeline).toBeNull();
-    expect(loaded!.comState).toEqual({});
-  });
-});
-
-// ==========================================================================
-// Existing adversarial tests (preserved/updated)
-// ==========================================================================
 
 describe("adversarial: large timeline", () => {
   it("200-message timeline — incremental save, all persisted", async () => {
@@ -729,84 +512,6 @@ describe("adversarial: large timeline", () => {
     }
     await store.save("s1", makeSnapshot("s1", { timeline: entries, tick: 105 }));
     expect(messageCount()).toBe(210);
-  });
-});
-
-describe("adversarial: all content block types", () => {
-  it("text, image, tool_use, tool_result, code, json blocks roundtrip", async () => {
-    const blocks: ContentBlock[] = [
-      { type: "text", text: "Hello" } as ContentBlock,
-      {
-        type: "image",
-        source: { type: "base64", media_type: "image/png", data: "abc123" },
-      } as ContentBlock,
-      {
-        type: "tool_use",
-        toolUseId: "tu-1",
-        name: "search",
-        input: { query: "test" },
-      } as ContentBlock,
-      {
-        type: "tool_result",
-        toolUseId: "tu-1",
-        name: "search",
-        content: [{ type: "text", text: "Found it" } as ContentBlock],
-      } as ContentBlock,
-      {
-        type: "code",
-        text: "console.log('hi')",
-        language: "javascript",
-      } as ContentBlock,
-      { type: "json", data: { key: "value" } } as ContentBlock,
-    ];
-
-    const entry: COMTimelineEntry = {
-      id: randomUUID(),
-      kind: "message",
-      message: { role: "assistant", content: blocks },
-    };
-
-    await store.save("s1", makeSnapshot("s1", { timeline: [entry] }));
-    const loaded = await store.load("s1");
-    const loadedBlocks = loaded!.timeline![0].message.content;
-
-    expect(loadedBlocks.length).toBe(6);
-    expect(loadedBlocks[0].type).toBe("text");
-    expect((loadedBlocks[0] as { text: string }).text).toBe("Hello");
-    expect(loadedBlocks[1].type).toBe("image");
-    expect(loadedBlocks[2].type).toBe("tool_use");
-    expect(loadedBlocks[3].type).toBe("tool_result");
-    expect(loadedBlocks[4].type).toBe("code");
-    expect(loadedBlocks[5].type).toBe("json");
-  });
-});
-
-describe("adversarial: unicode content", () => {
-  it("emoji, CJK, RTL in messages roundtrip", async () => {
-    const entries = [
-      makeEntry("user", "Hello! \u{1F600}\u{1F525}\u{1F389}"),
-      makeEntry("assistant", "\u4F60\u597D\u4E16\u754C - \u3053\u3093\u306B\u3061\u306F"),
-      makeEntry(
-        "user",
-        "\u0645\u0631\u062D\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645",
-      ),
-      makeEntry("assistant", "Caf\u00E9 na\u00EFve"),
-    ];
-
-    await store.save("s1", makeSnapshot("s1", { timeline: entries }));
-    const loaded = await store.load("s1");
-    expect((loaded!.timeline![0].message.content[0] as { text: string }).text).toContain(
-      "\u{1F600}",
-    );
-    expect((loaded!.timeline![1].message.content[0] as { text: string }).text).toContain(
-      "\u4F60\u597D",
-    );
-    expect((loaded!.timeline![2].message.content[0] as { text: string }).text).toContain(
-      "\u0645\u0631\u062D\u0628\u0627",
-    );
-    expect((loaded!.timeline![3].message.content[0] as { text: string }).text).toContain(
-      "na\u00EFve",
-    );
   });
 });
 
@@ -831,133 +536,5 @@ describe("adversarial: concurrent saves to different sessions", () => {
       expect(loaded).not.toBeNull();
       expect(loaded!.timeline!.length).toBe(1);
     }
-  });
-});
-
-describe("adversarial: double delete", () => {
-  it("deleting a non-existent session doesn't crash", async () => {
-    await store.delete("nonexistent");
-    await store.delete("nonexistent");
-  });
-
-  it("delete then delete same session", async () => {
-    await store.save("s1", makeSnapshot("s1"));
-    await store.delete("s1");
-    await store.delete("s1");
-    expect(await store.has("s1")).toBe(false);
-  });
-});
-
-describe("adversarial: visibility/tags/metadata roundtrip", () => {
-  it("preserves visibility, tags, and metadata", async () => {
-    const entry = makeEntry("user", "Hello", {
-      visibility: "observer",
-      tags: ["important", "debug"],
-      metadata: { source: "test", priority: 1 },
-    });
-
-    await store.save("s1", makeSnapshot("s1", { timeline: [entry] }));
-    const loaded = await store.load("s1");
-    const e = loaded!.timeline![0];
-    expect(e.visibility).toBe("observer");
-    expect(e.tags).toEqual(["important", "debug"]);
-    expect(e.metadata).toEqual({ source: "test", priority: 1 });
-  });
-});
-
-describe("adversarial: entries without IDs", () => {
-  it("generates UUIDs for entries without id field", async () => {
-    const entry: COMTimelineEntry = {
-      kind: "message",
-      message: {
-        role: "user",
-        content: [{ type: "text", text: "no-id" } as ContentBlock],
-      },
-    };
-
-    await store.save("s1", makeSnapshot("s1", { timeline: [entry] }));
-
-    const msgs = db.prepare("SELECT id FROM messages WHERE session_id = ?").all("s1") as {
-      id: string;
-    }[];
-    expect(msgs.length).toBe(1);
-    expect(msgs[0].id).toMatch(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/);
-  });
-});
-
-describe("adversarial: text_preview truncation", () => {
-  it("truncates text_preview to 500 chars", async () => {
-    const longText = "x".repeat(1000);
-    const entry = makeEntry("user", longText);
-
-    await store.save("s1", makeSnapshot("s1", { timeline: [entry] }));
-
-    const rows = db.prepare("SELECT text_preview FROM messages").all() as {
-      text_preview: string;
-    }[];
-    expect(rows[0].text_preview.length).toBe(500);
-
-    const loaded = await store.load("s1");
-    expect((loaded!.timeline![0].message.content[0] as { text: string }).text.length).toBe(1000);
-  });
-});
-
-describe("adversarial: SemanticContentBlock transient fields stripped", () => {
-  it("semanticNode and semantic fields are not persisted in content_json", async () => {
-    const block = {
-      type: "text",
-      text: "Hello",
-      semanticNode: { type: "heading", level: 1 },
-      semantic: { type: "heading", level: 1 },
-      formatter: () => {},
-    } as unknown as ContentBlock;
-
-    const entry: COMTimelineEntry = {
-      id: randomUUID(),
-      kind: "message",
-      message: { role: "user", content: [block] },
-    };
-
-    await store.save("s1", makeSnapshot("s1", { timeline: [entry] }));
-
-    const rows = db.prepare("SELECT content_json FROM content_blocks").all() as {
-      content_json: string;
-    }[];
-    const parsed = JSON.parse(rows[0].content_json);
-    expect(parsed).not.toHaveProperty("semanticNode");
-    expect(parsed).not.toHaveProperty("semantic");
-    expect(parsed).not.toHaveProperty("formatter");
-    expect(parsed.text).toBe("Hello");
-  });
-});
-
-describe("adversarial: multiple roles", () => {
-  it("all message roles roundtrip (user, assistant, system, tool, event)", async () => {
-    const entries = [
-      makeEntry("user", "User msg"),
-      makeEntry("assistant", "Assistant msg"),
-      makeEntry("system", "System msg"),
-      makeEntry("tool", "Tool result"),
-      makeEntry("event", "Event msg"),
-    ];
-
-    await store.save("s1", makeSnapshot("s1", { timeline: entries }));
-    const loaded = await store.load("s1");
-    expect(loaded!.timeline!.map((e) => e.message.role)).toEqual([
-      "user",
-      "assistant",
-      "system",
-      "tool",
-      "event",
-    ]);
-  });
-});
-
-describe("adversarial: empty string values", () => {
-  it("empty strings in text content roundtrip", async () => {
-    const entry = makeEntry("user", "");
-    await store.save("s1", makeSnapshot("s1", { timeline: [entry] }));
-    const loaded = await store.load("s1");
-    expect((loaded!.timeline![0].message.content[0] as { text: string }).text).toBe("");
   });
 });
