@@ -1,11 +1,17 @@
 import { execSync } from "node:child_process";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@agentick/client";
 import { createLocalTransport } from "@agentick/core";
 import type { App } from "@agentick/core";
+import type { ClientTransport } from "@agentick/shared";
 import { createTUI } from "@agentick/tui";
 import { startDevToolsServer } from "@agentick/devtools";
-import { createGateway, type GatewayPlugin } from "@agentick/gateway";
+import {
+  createGateway,
+  createUnixSocketClientTransport,
+  type GatewayPlugin,
+} from "@agentick/gateway";
 import { CronService, bindSchedulerStore } from "@agentick/scheduler";
 import { bindSessionStore, bindMemory } from "@tentickle/agent";
 import type { TentickleSessionStore, TentickleMemory } from "@tentickle/agent";
@@ -15,6 +21,14 @@ type AppFactory = (opts: {
   devTools: boolean;
   maxTicks: number;
 }) => Promise<{ app: App<any>; store: TentickleSessionStore; memory?: TentickleMemory }>;
+
+// ============================================================================
+// Socket path convention
+// ============================================================================
+
+function getSocketPath(): string {
+  return process.env.TENTICKLE_SOCKET ?? join(homedir(), ".tentickle", "daemon.sock");
+}
 
 // ============================================================================
 // Single-app launcher (for standalone agent entry points)
@@ -86,6 +100,25 @@ export async function launchGateway(options: GatewayLaunchOptions): Promise<void
 
   normalizeToGitRoot();
 
+  // Try connecting to a running daemon first
+  const socketPath = getSocketPath();
+  const daemonTransport = await tryDaemonConnection(socketPath);
+
+  if (daemonTransport) {
+    // Connected to running daemon — lightweight TUI only.
+    // No app creation, no store binding, no cron. The daemon owns all of that.
+    console.log(`Connected to daemon via ${socketPath}`);
+    const client = createClient({ baseUrl: "unix://", transport: daemonTransport });
+    const tui = createTUI({ client, sessionId: "tui", ui: TentickleTUI });
+    try {
+      await tui.start();
+    } finally {
+      daemonTransport.disconnect();
+    }
+    return;
+  }
+
+  // No daemon — fall back to in-process (current behavior, unchanged)
   if (devTools) {
     startDevToolsServer();
   }
@@ -142,6 +175,27 @@ export async function launchGateway(options: GatewayLaunchOptions): Promise<void
     await tui.start();
   } finally {
     await cronService.stop();
+  }
+}
+
+// ============================================================================
+// Daemon connection probe
+// ============================================================================
+
+/**
+ * Try to connect to a running daemon over Unix socket.
+ * Returns the transport if successful, null if no daemon is running.
+ */
+async function tryDaemonConnection(socketPath: string): Promise<ClientTransport | null> {
+  try {
+    const transport = createUnixSocketClientTransport({
+      socketPath,
+      reconnect: { enabled: false },
+    });
+    await transport.connect();
+    return transport;
+  } catch {
+    return null;
   }
 }
 

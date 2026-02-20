@@ -236,9 +236,10 @@ cd agentick && pnpm install && pnpm build && cd ..
 
 # Install and run
 cd tentickle && pnpm install
-pnpm --filter @tentickle/coding start   # Launch the coding agent
-pnpm --filter @tentickle/main start     # Launch the main agent
-pnpm --filter @tentickle/coding dev     # Dev mode with auto-reload
+pnpm --filter @tentickle/cli start       # Run the TUI (auto: daemon → in-process)
+pnpm --filter @tentickle/cli start -- start   # Start the daemon (background)
+pnpm --filter @tentickle/cli start -- status  # Check daemon status
+pnpm --filter @tentickle/cli start -- stop    # Stop the daemon
 ```
 
 When you change agentick, rebuild it (`cd ../agentick && pnpm build`) and the changes are immediately available in tentickle.
@@ -266,10 +267,11 @@ What works today:
 - Scheduled jobs and heartbeats via `@agentick/scheduler`
 - Telegram and iMessage connectors
 - Rich terminal UI with confirmations, completions, context injection, and attachments
+- Daemon mode — gateway as background process, TUI connects over Unix socket
 
 What's next:
 
-- Installable CLI (`npx tentickle`) with subcommands (`send`, `sessions`, `serve`)
+- Installable CLI (`npx tentickle`) with subcommands (`send`, `sessions`)
 - Shared TUI base — extract common chat UI for coding and main agents
 - Docker container support for headless operation
 - Error recovery patterns

@@ -198,9 +198,24 @@ importers:
 
   packages/cli:
     dependencies:
+      '@agentick/client':
+        specifier: link:../../../agentick/packages/client
+        version: link:../../../agentick/packages/client
       '@agentick/connector-telegram':
         specifier: link:../../../agentick/packages/connector-telegram
         version: link:../../../agentick/packages/connector-telegram
+      '@agentick/devtools':
+        specifier: link:../../../agentick/packages/devtools
+        version: link:../../../agentick/packages/devtools
+      '@agentick/gateway':
+        specifier: link:../../../agentick/packages/gateway
+        version: link:../../../agentick/packages/gateway
+      '@agentick/scheduler':
+        specifier: link:../../../agentick/packages/scheduler
+        version: link:../../../agentick/packages/scheduler
+      '@tentickle/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@tentickle/coding':
         specifier: workspace:*
         version: link:../../agents/coding

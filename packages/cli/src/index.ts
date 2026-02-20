@@ -1,6 +1,13 @@
 import { Command } from "commander";
 import { launchGateway, type GatewayPlugin } from "@tentickle/tui";
 import { TelegramPlugin } from "@agentick/connector-telegram";
+import {
+  startDaemon,
+  stopDaemon,
+  daemonStatus,
+  runDaemonProcess,
+  getSocketPath,
+} from "./daemon.js";
 
 const AGENTS: Record<string, () => Promise<(opts: any) => Promise<any>>> = {
   main: () => import("@tentickle/main").then((m) => m.createMainApp),
@@ -11,7 +18,10 @@ export function run(argv = process.argv): void {
   const program = new Command()
     .name("tentickle")
     .description("Autonomous coding agent built on agentick")
-    .version("0.0.3")
+    .version("0.0.3");
+
+  // ── Default command: TUI (auto: daemon → in-process fallback) ──────
+  program
     .option("--agent <name>", `default agent for TUI (${Object.keys(AGENTS).join(", ")})`, "main")
     .option("--max-ticks <n>", "maximum model calls per execution", "250")
     .option("--no-devtools", "disable devtools server")
@@ -48,6 +58,59 @@ export function run(argv = process.argv): void {
         devTools: opts.devtools,
         plugins,
       });
+    });
+
+  // ── tentickle start ────────────────────────────────────────────────
+  program
+    .command("start")
+    .description("Start the daemon (background gateway process)")
+    .option("--foreground", "run in foreground (for debugging)")
+    .option("--agent <name>", "default agent", "main")
+    .option("--max-ticks <n>", "maximum model calls per execution", "250")
+    .option("--no-devtools", "disable devtools server")
+    .option("--log-file <path>", "daemon log file (default: ~/.tentickle/daemon.log)")
+    .option("--daemon-child", "internal: marks this process as the forked daemon child")
+    .action(async (opts) => {
+      if (opts.daemonChild) {
+        // We're the forked background child — run the gateway directly
+        const socketPath = getSocketPath();
+        await runDaemonProcess(socketPath, opts, AGENTS);
+        return;
+      }
+
+      await startDaemon(
+        {
+          foreground: opts.foreground,
+          agent: opts.agent,
+          maxTicks: parseInt(opts.maxTicks, 10),
+          devTools: opts.devtools,
+          logFile: opts.logFile,
+        },
+        AGENTS,
+      );
+    });
+
+  // ── tentickle stop ─────────────────────────────────────────────────
+  program
+    .command("stop")
+    .description("Stop the running daemon")
+    .action(async () => {
+      await stopDaemon();
+    });
+
+  // ── tentickle status ───────────────────────────────────────────────
+  program
+    .command("status")
+    .description("Check if daemon is running")
+    .action(async () => {
+      const status = await daemonStatus();
+      if (status.running) {
+        console.log(`Daemon running (pid ${status.pid})`);
+        console.log(`Socket: ${status.socketPath}`);
+        if (status.logFile) console.log(`Log: ${status.logFile}`);
+      } else {
+        console.log("Daemon not running");
+      }
     });
 
   program.parse(argv);
