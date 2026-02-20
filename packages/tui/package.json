@@ -1,16 +1,13 @@
 {
-  "name": "@tentickle/main",
+  "name": "@tentickle/tui",
   "version": "0.0.3",
-  "description": "Main agent — orchestration, judgment, context maintenance",
+  "description": "Shared TUI components for tentickle agents",
   "license": "MIT",
   "author": "Ryan Lindgren",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agenticklabs/tentickle.git",
-    "directory": "agents/main"
-  },
-  "bin": {
-    "tentickle-main": "bin/tentickle-main.ts"
+    "directory": "packages/tui"
   },
   "files": [
     "dist"
@@ -22,9 +19,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "bin": {
-      "tentickle-main": "dist/bin/tentickle-main.js"
-    },
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
@@ -35,8 +29,6 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "start": "node --env-file=../../.env --import tsx bin/tentickle-main.ts",
-    "dev": "node --env-file=../../.env --import tsx --watch bin/tentickle-main.ts",
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
@@ -44,14 +36,20 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@agentick/client": "^0.8.0",
     "@agentick/core": "^0.8.0",
-    "@tentickle/agent": "workspace:*",
-    "@tentickle/tui": "workspace:*"
+    "@agentick/devtools": "^0.8.0",
+    "@agentick/gateway": "^0.8.0",
+    "@agentick/react": "^0.8.0",
+    "@agentick/scheduler": "^0.7.1",
+    "@agentick/shared": "^0.8.0",
+    "@agentick/tui": "^0.8.0",
+    "@tentickle/agent": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
+    "ink": "^6.7.0",
     "react": "^19.0.0",
-    "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   },
   "peerDependencies": {

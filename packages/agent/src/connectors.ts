@@ -1,6 +1,5 @@
 import type { AgentickClient } from "@agentick/client";
 import { createConnector, type ConnectorConfig } from "@agentick/connector";
-import { TelegramPlatform } from "@agentick/connector-telegram";
 import { IMessagePlatform } from "@agentick/connector-imessage";
 
 export interface ConnectorHandle {
@@ -10,6 +9,9 @@ export interface ConnectorHandle {
 /**
  * Start connectors based on environment variables.
  * Each connector is opt-in: only starts if its required env vars are set.
+ *
+ * Note: Telegram is now a GatewayPlugin, wired in packages/cli.
+ * Only client-side connectors (iMessage) remain here.
  */
 export async function startConnectors(
   client: AgentickClient,
@@ -18,33 +20,6 @@ export async function startConnectors(
   } = {},
 ): Promise<ConnectorHandle[]> {
   const handles: ConnectorHandle[] = [];
-
-  // Telegram
-  const telegramToken = process.env["TELEGRAM_BOT_TOKEN"];
-  if (telegramToken) {
-    const allowedUsers = process.env["TELEGRAM_USER_ID"]
-      ? [parseInt(process.env["TELEGRAM_USER_ID"], 10)]
-      : undefined;
-
-    const connector = createConnector(
-      client,
-      new TelegramPlatform({
-        token: telegramToken,
-        allowedUsers,
-      }),
-      {
-        sessionId: "telegram",
-        contentPolicy: "summarized",
-        deliveryStrategy: "debounced",
-        debounceMs: 2000,
-        renderMode: "message",
-        ...(connectorConfig["telegram"] || {}),
-      },
-    );
-
-    await connector.start();
-    handles.push(connector);
-  }
 
   // iMessage (macOS only)
   const imessageHandle = process.env["IMESSAGE_HANDLE"];

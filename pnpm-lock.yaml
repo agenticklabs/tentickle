@@ -16,7 +16,9 @@ overrides:
   '@agentick/connector-telegram': link:../agentick/packages/connector-telegram
   '@agentick/core': link:../agentick/packages/core
   '@agentick/devtools': link:../agentick/packages/devtools
+  '@agentick/gateway': link:../agentick/packages/gateway
   '@agentick/google': link:../agentick/packages/adapters/google
+  '@agentick/huggingface': link:../agentick/packages/adapters/huggingface
   '@agentick/kernel': link:../agentick/packages/kernel
   '@agentick/openai': link:../agentick/packages/adapters/openai
   '@agentick/react': link:../agentick/packages/react
@@ -82,30 +84,18 @@ importers:
 
   agents/coding:
     dependencies:
-      '@agentick/client':
-        specifier: link:../../../agentick/packages/client
-        version: link:../../../agentick/packages/client
       '@agentick/core':
         specifier: link:../../../agentick/packages/core
         version: link:../../../agentick/packages/core
-      '@agentick/devtools':
-        specifier: link:../../../agentick/packages/devtools
-        version: link:../../../agentick/packages/devtools
-      '@agentick/react':
-        specifier: link:../../../agentick/packages/react
-        version: link:../../../agentick/packages/react
       '@agentick/scheduler':
         specifier: link:../../../agentick/packages/scheduler
         version: link:../../../agentick/packages/scheduler
-      '@agentick/shared':
-        specifier: link:../../../agentick/packages/shared
-        version: link:../../../agentick/packages/shared
-      '@agentick/tui':
-        specifier: link:../../../agentick/packages/tui
-        version: link:../../../agentick/packages/tui
       '@tentickle/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@tentickle/tui':
+        specifier: workspace:*
+        version: link:../../packages/tui
       react:
         specifier: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
         version: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
@@ -116,12 +106,6 @@ importers:
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
-      ink:
-        specifier: link:../../../agentick/node_modules/.pnpm/ink@6.8.0_@types+react@19.2.13_react@19.2.4/node_modules/ink
-        version: link:../../../agentick/node_modules/.pnpm/ink@6.8.0_@types+react@19.2.13_react@19.2.4/node_modules/ink
-      ink-text-input:
-        specifier: ^6.0.0
-        version: 6.0.0(ink@agentick+node_modules+.pnpm+ink@6.8.0_@types+react@19.2.13_react@19.2.4+node_modules+ink)(react@agentick+node_modules+.pnpm+react@19.2.4+node_modules+react)
       tsx:
         specifier: ^4.19.0
         version: 4.21.0
@@ -131,33 +115,18 @@ importers:
 
   agents/main:
     dependencies:
-      '@agentick/client':
-        specifier: link:../../../agentick/packages/client
-        version: link:../../../agentick/packages/client
       '@agentick/core':
         specifier: link:../../../agentick/packages/core
         version: link:../../../agentick/packages/core
-      '@agentick/devtools':
-        specifier: link:../../../agentick/packages/devtools
-        version: link:../../../agentick/packages/devtools
-      '@agentick/scheduler':
-        specifier: link:../../../agentick/packages/scheduler
-        version: link:../../../agentick/packages/scheduler
-      '@agentick/shared':
-        specifier: link:../../../agentick/packages/shared
-        version: link:../../../agentick/packages/shared
-      '@agentick/tui':
-        specifier: link:../../../agentick/packages/tui
-        version: link:../../../agentick/packages/tui
       '@tentickle/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@tentickle/tui':
+        specifier: workspace:*
+        version: link:../../packages/tui
       react:
         specifier: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
         version: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
     devDependencies:
       '@types/react':
         specifier: ^19.0.0
@@ -183,15 +152,15 @@ importers:
       '@agentick/connector-imessage':
         specifier: link:../../../agentick/packages/connector-imessage
         version: link:../../../agentick/packages/connector-imessage
-      '@agentick/connector-telegram':
-        specifier: link:../../../agentick/packages/connector-telegram
-        version: link:../../../agentick/packages/connector-telegram
       '@agentick/core':
         specifier: link:../../../agentick/packages/core
         version: link:../../../agentick/packages/core
       '@agentick/google':
         specifier: link:../../../agentick/packages/adapters/google
         version: link:../../../agentick/packages/adapters/google
+      '@agentick/huggingface':
+        specifier: link:../../../agentick/packages/adapters/huggingface
+        version: link:../../../agentick/packages/adapters/huggingface
       '@agentick/openai':
         specifier: link:../../../agentick/packages/adapters/openai
         version: link:../../../agentick/packages/adapters/openai
@@ -204,6 +173,12 @@ importers:
       '@agentick/shared':
         specifier: link:../../../agentick/packages/shared
         version: link:../../../agentick/packages/shared
+      '@tentickle/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@tentickle/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@tentickle/tools':
         specifier: workspace:*
         version: link:../tools
@@ -221,11 +196,77 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/cli:
+    dependencies:
+      '@agentick/connector-telegram':
+        specifier: link:../../../agentick/packages/connector-telegram
+        version: link:../../../agentick/packages/connector-telegram
+      '@tentickle/coding':
+        specifier: workspace:*
+        version: link:../../agents/coding
+      '@tentickle/main':
+        specifier: workspace:*
+        version: link:../../agents/main
+      '@tentickle/tui':
+        specifier: workspace:*
+        version: link:../tui
+      commander:
+        specifier: ^14.0.3
+        version: 14.0.3
+    devDependencies:
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/memory:
+    dependencies:
+      '@agentick/core':
+        specifier: link:../../../agentick/packages/core
+        version: link:../../../agentick/packages/core
+      '@agentick/shared':
+        specifier: link:../../../agentick/packages/shared
+        version: link:../../../agentick/packages/shared
+      react:
+        specifier: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
+        version: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
+      sqlite-vec:
+        specifier: ^0.1.7-alpha.2
+        version: 0.1.7-alpha.2
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/storage:
+    dependencies:
+      '@agentick/core':
+        specifier: link:../../../agentick/packages/core
+        version: link:../../../agentick/packages/core
+      '@agentick/shared':
+        specifier: link:../../../agentick/packages/shared
+        version: link:../../../agentick/packages/shared
+    devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/tentickle:
     dependencies:
       '@tentickle/agent':
         specifier: workspace:*
         version: link:../agent
+      '@tentickle/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@tentickle/coding':
         specifier: workspace:*
         version: link:../../agents/coding
@@ -235,6 +276,13 @@ importers:
       '@tentickle/tools':
         specifier: workspace:*
         version: link:../tools
+      '@tentickle/tui':
+        specifier: workspace:*
+        version: link:../tui
+    devDependencies:
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
 
   packages/tools:
     dependencies:
@@ -251,6 +299,49 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/tui:
+    dependencies:
+      '@agentick/client':
+        specifier: link:../../../agentick/packages/client
+        version: link:../../../agentick/packages/client
+      '@agentick/core':
+        specifier: link:../../../agentick/packages/core
+        version: link:../../../agentick/packages/core
+      '@agentick/devtools':
+        specifier: link:../../../agentick/packages/devtools
+        version: link:../../../agentick/packages/devtools
+      '@agentick/gateway':
+        specifier: link:../../../agentick/packages/gateway
+        version: link:../../../agentick/packages/gateway
+      '@agentick/react':
+        specifier: link:../../../agentick/packages/react
+        version: link:../../../agentick/packages/react
+      '@agentick/scheduler':
+        specifier: link:../../../agentick/packages/scheduler
+        version: link:../../../agentick/packages/scheduler
+      '@agentick/shared':
+        specifier: link:../../../agentick/packages/shared
+        version: link:../../../agentick/packages/shared
+      '@agentick/tui':
+        specifier: link:../../../agentick/packages/tui
+        version: link:../../../agentick/packages/tui
+      '@tentickle/agent':
+        specifier: workspace:*
+        version: link:../agent
+      react:
+        specifier: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
+        version: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      ink:
+        specifier: link:../../../agentick/node_modules/.pnpm/ink@6.8.0_@types+react@19.2.13_react@19.2.4/node_modules/ink
+        version: link:../../../agentick/node_modules/.pnpm/ink@6.8.0_@types+react@19.2.13_react@19.2.4/node_modules/ink
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1539,10 +1630,6 @@ packages:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
     engines: {node: '>=10'}
 
-  chalk@5.6.2:
-    resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
-    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
-
   character-entities-html4@2.1.0:
     resolution: {integrity: sha512-1v7fgQRj6hnSwFpq1Eu0ynr/CDEw0rXo2B61qXrLNdHZmPKgb7fqS1a2JwF0rISo9q77jDI8VMEHoApn8qDoZA==}
 
@@ -1569,6 +1656,10 @@ packages:
 
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
+
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
 
   compare-func@2.0.0:
     resolution: {integrity: sha512-zHig5N+tPWARooBnb0Zx1MFcdfpyJrfTJ3Y5L+IFvUm8rM74hHz66z0gw0x4tijh5CorKkKUCnW82R2vmpeCRA==}
@@ -1908,13 +1999,6 @@ packages:
   ini@4.1.1:
     resolution: {integrity: sha512-QQnnxNyfvmHFIsj7gkPcYymR8Jdw/o7mp5ZFihxn6h8Ci6fh3Dx4E1gPjpQEpIuPo9XVNY/ZUwh4BPMjGyL01g==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
-
-  ink-text-input@6.0.0:
-    resolution: {integrity: sha512-Fw64n7Yha5deb1rHY137zHTAbSTNelUKuB5Kkk2HACXEtwIHBCf9OH2tP/LQ9fRYTl1F0dZgbW0zPnZk6FA9Lw==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      ink: '>=5'
-      react: '>=18'
 
   is-arrayish@0.2.1:
     resolution: {integrity: sha512-zz06S8t0ozoDXMG+ube26zeCTNXcKIPJZJi8hBrF4idCLms4CG9QtK7qBl1boi5ODzFpjswb5JPmHCbMpjaYzg==}
@@ -2360,6 +2444,34 @@ packages:
   sprintf-js@1.0.3:
     resolution: {integrity: sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g==}
 
+  sqlite-vec-darwin-arm64@0.1.7-alpha.2:
+    resolution: {integrity: sha512-raIATOqFYkeCHhb/t3r7W7Cf2lVYdf4J3ogJ6GFc8PQEgHCPEsi+bYnm2JT84MzLfTlSTIdxr4/NKv+zF7oLPw==}
+    cpu: [arm64]
+    os: [darwin]
+
+  sqlite-vec-darwin-x64@0.1.7-alpha.2:
+    resolution: {integrity: sha512-jeZEELsQjjRsVojsvU5iKxOvkaVuE+JYC8Y4Ma8U45aAERrDYmqZoHvgSG7cg1PXL3bMlumFTAmHynf1y4pOzA==}
+    cpu: [x64]
+    os: [darwin]
+
+  sqlite-vec-linux-arm64@0.1.7-alpha.2:
+    resolution: {integrity: sha512-6Spj4Nfi7tG13jsUG+W7jnT0bCTWbyPImu2M8nWp20fNrd1SZ4g3CSlDAK8GBdavX7wRlbBHCZ+BDa++rbDewA==}
+    cpu: [arm64]
+    os: [linux]
+
+  sqlite-vec-linux-x64@0.1.7-alpha.2:
+    resolution: {integrity: sha512-IcgrbHaDccTVhXDf8Orwdc2+hgDLAFORl6OBUhcvlmwswwBP1hqBTSEhovClG4NItwTOBNgpwOoQ7Qp3VDPWLg==}
+    cpu: [x64]
+    os: [linux]
+
+  sqlite-vec-windows-x64@0.1.7-alpha.2:
+    resolution: {integrity: sha512-TRP6hTjAcwvQ6xpCZvjP00pdlda8J38ArFy1lMYhtQWXiIBmWnhMaMbq4kaeCYwvTTddfidatRS+TJrwIKB/oQ==}
+    cpu: [x64]
+    os: [win32]
+
+  sqlite-vec@0.1.7-alpha.2:
+    resolution: {integrity: sha512-rNgRCv+4V4Ed3yc33Qr+nNmjhtrMnnHzXfLVPeGb28Dx5mmDL3Ngw/Wk8vhCGjj76+oC6gnkmMG8y73BZWGBwQ==}
+
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
 
@@ -2474,10 +2586,6 @@ packages:
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
-
-  type-fest@4.41.0:
-    resolution: {integrity: sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA==}
-    engines: {node: '>=16'}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -3933,8 +4041,6 @@ snapshots:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
 
-  chalk@5.6.2: {}
-
   character-entities-html4@2.1.0: {}
 
   character-entities-legacy@3.0.0: {}
@@ -3956,6 +4062,8 @@ snapshots:
   color-name@1.1.4: {}
 
   comma-separated-tokens@2.0.3: {}
+
+  commander@14.0.3: {}
 
   compare-func@2.0.0:
     dependencies:
@@ -4341,13 +4449,6 @@ snapshots:
   imurmurhash@0.1.4: {}
 
   ini@4.1.1: {}
-
-  ink-text-input@6.0.0(ink@agentick+node_modules+.pnpm+ink@6.8.0_@types+react@19.2.13_react@19.2.4+node_modules+ink)(react@agentick+node_modules+.pnpm+react@19.2.4+node_modules+react):
-    dependencies:
-      chalk: 5.6.2
-      ink: link:../agentick/node_modules/.pnpm/ink@6.8.0_@types+react@19.2.13_react@19.2.4/node_modules/ink
-      react: link:../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
-      type-fest: 4.41.0
 
   is-arrayish@0.2.1: {}
 
@@ -4773,6 +4874,29 @@ snapshots:
 
   sprintf-js@1.0.3: {}
 
+  sqlite-vec-darwin-arm64@0.1.7-alpha.2:
+    optional: true
+
+  sqlite-vec-darwin-x64@0.1.7-alpha.2:
+    optional: true
+
+  sqlite-vec-linux-arm64@0.1.7-alpha.2:
+    optional: true
+
+  sqlite-vec-linux-x64@0.1.7-alpha.2:
+    optional: true
+
+  sqlite-vec-windows-x64@0.1.7-alpha.2:
+    optional: true
+
+  sqlite-vec@0.1.7-alpha.2:
+    optionalDependencies:
+      sqlite-vec-darwin-arm64: 0.1.7-alpha.2
+      sqlite-vec-darwin-x64: 0.1.7-alpha.2
+      sqlite-vec-linux-arm64: 0.1.7-alpha.2
+      sqlite-vec-linux-x64: 0.1.7-alpha.2
+      sqlite-vec-windows-x64: 0.1.7-alpha.2
+
   stackback@0.0.2: {}
 
   std-env@3.10.0: {}
@@ -4868,8 +4992,6 @@ snapshots:
   type-check@0.4.0:
     dependencies:
       prelude-ls: 1.2.1
-
-  type-fest@4.41.0: {}
 
   typescript@5.9.3: {}
 

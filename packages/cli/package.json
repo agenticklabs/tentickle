@@ -1,13 +1,13 @@
 {
-  "name": "@tentickle/coding",
+  "name": "@tentickle/cli",
   "version": "0.0.3",
-  "description": "Coding agent — autonomous software engineering",
+  "description": "CLI entry point for tentickle agents",
   "license": "MIT",
   "author": "Ryan Lindgren",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agenticklabs/tentickle.git",
-    "directory": "agents/coding"
+    "directory": "packages/cli"
   },
   "bin": {
     "tentickle": "bin/tentickle.ts"
@@ -27,36 +27,32 @@
     },
     "exports": {
       ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
+        "types": "./dist/src/index.d.ts",
+        "import": "./dist/src/index.js"
       }
     },
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts"
+    "main": "./dist/src/index.js",
+    "types": "./dist/src/index.d.ts"
   },
   "scripts": {
     "start": "node --env-file=../../.env --import tsx bin/tentickle.ts",
-    "dev": "node --env-file=../../.env --import tsx --watch bin/tentickle.ts",
+    "start:main": "node --env-file=../../.env --import tsx bin/tentickle.ts",
+    "start:coding": "node --env-file=../../.env --import tsx bin/tentickle.ts --agent coding",
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src/",
-    "format:check": "oxfmt --check src/",
+    "lint": "oxlint src/ bin/",
+    "format:check": "oxfmt --check src/ bin/",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agentick/core": "^0.8.0",
-    "@agentick/scheduler": "^0.7.1",
-    "@tentickle/agent": "workspace:*",
+    "@agentick/connector-telegram": "*",
+    "@tentickle/coding": "workspace:*",
+    "@tentickle/main": "workspace:*",
     "@tentickle/tui": "workspace:*",
-    "zod": "^4.3.6"
+    "commander": "^14.0.3"
   },
   "devDependencies": {
-    "@types/react": "^19.0.0",
-    "react": "^19.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3"
-  },
-  "peerDependencies": {
-    "react": "^19.0.0"
   }
 }

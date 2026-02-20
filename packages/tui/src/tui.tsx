@@ -1,14 +1,47 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import type { ReactNode } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import { useSession, useChat } from "@agentick/react";
 import { timelineToMessages } from "@agentick/client";
-import { fileURLToPath } from "node:url";
-import { dirname, basename } from "node:path";
+import { basename } from "node:path";
 import fs from "node:fs";
 import { getProjectDir, getSessionStore } from "@tentickle/agent";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import {
+  ToolConfirmationPrompt,
+  ErrorDisplay,
+  InputBar,
+  CompletionPicker,
+  ToolCallIndicator,
+  SpawnIndicator,
+  Spinner,
+  useSlashCommands,
+  useCommandsConfig,
+  helpCommand,
+  clearCommand,
+  exitCommand,
+  loadCommand,
+  createCommandCompletionSource,
+  renderMessage,
+  useLineEditor,
+  useDoubleCtrlC,
+  handleConfirmationKey,
+} from "@agentick/tui";
+import type { SlashCommand } from "@agentick/tui";
+import type { ConfirmationPolicy } from "@agentick/client";
+import { extractText } from "@agentick/shared";
+import type { Message } from "@agentick/shared";
+import { Footer } from "./components/Footer.js";
+import { printBanner } from "./components/Banner.js";
+import { AttachmentStrip } from "./components/AttachmentStrip.js";
+import { TaskList } from "./components/TaskList.js";
+import { attachCommand } from "./commands/attach.js";
+import {
+  createFileCompletionSource,
+  createDirCompletionSource,
+  createMentionCompletionSource,
+} from "./file-completion.js";
+import { ContextStrip } from "./components/ContextStrip.js";
 
 function getProjectInfo() {
   const projectRoot = process.cwd();
@@ -33,42 +66,6 @@ function getProjectInfo() {
   return { projectName, projectAuthor };
 }
 
-import {
-  ToolConfirmationPrompt,
-  ErrorDisplay,
-  InputBar,
-  CompletionPicker,
-  ToolCallIndicator,
-  SpawnIndicator,
-  Spinner,
-  useSlashCommands,
-  useCommandsConfig,
-  helpCommand,
-  clearCommand,
-  exitCommand,
-  loadCommand,
-  createCommandCompletionSource,
-  renderMessage,
-  useLineEditor,
-  useDoubleCtrlC,
-  handleConfirmationKey,
-} from "@agentick/tui";
-import type { TUIComponent } from "@agentick/tui";
-import type { ConfirmationPolicy } from "@agentick/client";
-import { extractText } from "@agentick/shared";
-import type { Message } from "@agentick/shared";
-import { Footer } from "./components/Footer.js";
-import { printBanner } from "./components/Banner.js";
-import { AttachmentStrip } from "./components/AttachmentStrip.js";
-import { TaskList } from "./components/TaskList.js";
-import { attachCommand } from "./commands/attach.js";
-import {
-  createFileCompletionSource,
-  createDirCompletionSource,
-  createMentionCompletionSource,
-} from "./file-completion.js";
-import { ContextStrip } from "./components/ContextStrip.js";
-
 const confirmationPolicy: ConfirmationPolicy = (req) => {
   if (req.name === "write_file" || req.name === "edit_file") {
     const path = req.arguments.path as string | undefined;
@@ -79,7 +76,15 @@ const confirmationPolicy: ConfirmationPolicy = (req) => {
   return { action: "prompt" };
 };
 
-export const CodingTUI: TUIComponent = ({ sessionId }) => {
+export interface TentickleTUIProps {
+  sessionId: string;
+  /** Additional slash commands beyond the shared set */
+  commands?: SlashCommand[];
+  /** Content rendered before the input bar (after completion picker) */
+  children?: ReactNode;
+}
+
+export function TentickleTUI({ sessionId, commands: extraCommands, children }: TentickleTUIProps) {
   const { exit } = useApp();
   const { abort, accessor } = useSession({ sessionId, autoSubscribe: true });
 
@@ -217,6 +222,7 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
           }
         },
       },
+      ...(extraCommands ?? []),
     ],
     commandCtx,
   );
@@ -441,6 +447,8 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
 
       <TaskList />
 
+      {children}
+
       <ContextStrip files={contextFiles} focusIndex={contextFocus} />
       <AttachmentStrip attachments={attachments} focusIndex={attachmentFocus} />
 
@@ -460,4 +468,4 @@ export const CodingTUI: TUIComponent = ({ sessionId }) => {
       <Footer chatMode={chatMode} sessionId={sessionId} showExitHint={showExitHint} />
     </Box>
   );
-};
+}
