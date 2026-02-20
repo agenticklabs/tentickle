@@ -45,11 +45,11 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agentick/client": "^0.8.0",
+    "@agentick/client": "^0.9.0",
     "@agentick/connector-telegram": "*",
-    "@agentick/devtools": "^0.8.0",
-    "@agentick/gateway": "^0.8.0",
-    "@agentick/scheduler": "^0.7.1",
+    "@agentick/devtools": "^0.9.0",
+    "@agentick/gateway": "^0.9.0",
+    "@agentick/scheduler": "^0.9.0",
     "@tentickle/agent": "workspace:*",
     "@tentickle/coding": "workspace:*",
     "@tentickle/main": "workspace:*",

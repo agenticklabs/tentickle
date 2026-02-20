@@ -36,14 +36,14 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agentick/client": "^0.8.0",
-    "@agentick/core": "^0.8.0",
-    "@agentick/devtools": "^0.8.0",
-    "@agentick/gateway": "^0.8.0",
-    "@agentick/react": "^0.8.0",
-    "@agentick/scheduler": "^0.7.1",
-    "@agentick/shared": "^0.8.0",
-    "@agentick/tui": "^0.8.0",
+    "@agentick/client": "^0.9.0",
+    "@agentick/core": "^0.9.0",
+    "@agentick/devtools": "^0.9.0",
+    "@agentick/gateway": "^0.9.0",
+    "@agentick/react": "^0.9.0",
+    "@agentick/scheduler": "^0.9.0",
+    "@agentick/shared": "^0.9.0",
+    "@agentick/tui": "^0.9.0",
     "@tentickle/agent": "workspace:*"
   },
   "devDependencies": {
