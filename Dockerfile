@@ -1,8 +1,6 @@
-FROM node:24-slim
+FROM node:24-slim AS build
 
-# pnpm
 RUN corepack enable && corepack prepare pnpm@10.25.0 --activate
-
 WORKDIR /app
 
 # Copy package files first (cache layer)
@@ -17,7 +15,7 @@ COPY packages/tui/package.json packages/tui/
 COPY agents/main/package.json agents/main/
 COPY agents/coding/package.json agents/coding/
 
-# Strip local dev overrides and website from workspace (neither exists in Docker)
+# Strip local dev overrides and website from workspace
 RUN node -e "\
   const fs=require('fs');\
   const p=JSON.parse(fs.readFileSync('package.json','utf8'));\
@@ -26,14 +24,12 @@ RUN node -e "\
   const ws=fs.readFileSync('pnpm-workspace.yaml','utf8');\
   fs.writeFileSync('pnpm-workspace.yaml', ws.replace(/^.*website.*\n/gm,''))"
 
-# Install from npm (no frozen lockfile — overrides were stripped)
 RUN pnpm install --no-frozen-lockfile
 
-# Copy source and build
 COPY . .
 RUN pnpm build
 
-# Apply publishConfig so Node resolves dist/ instead of src/ (no tsx in prod)
+# Apply publishConfig, strip source files
 RUN node -e "\
   const fs=require('fs'),{join}=require('path');\
   const dirs=['packages/tentickle','packages/agent','packages/storage',\
@@ -43,9 +39,18 @@ RUN node -e "\
     const f=join(d,'package.json');\
     const p=JSON.parse(fs.readFileSync(f,'utf8'));\
     if(p.publishConfig){Object.assign(p,p.publishConfig);delete p.publishConfig}\
-    fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n')}"
+    fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n');\
+    fs.rmSync(join(d,'src'),{recursive:true,force:true});\
+    try{fs.rmSync(join(d,'tsconfig.json'),{force:true})}catch{};\
+    try{fs.rmSync(join(d,'tsconfig.build.json'),{force:true})}catch{}};\
+  fs.rmSync('.turbo',{recursive:true,force:true});"
 
-# Default: daemon foreground with WebSocket on 18789
+# --- Production image (clean layer history) ---
+FROM node:24-slim
+
+WORKDIR /app
+COPY --from=build /app /app
+
 ENV NODE_ENV=production
 EXPOSE 18789
 
