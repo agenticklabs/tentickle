@@ -1,0 +1,16 @@
+services:
+  tentickle:
+    build: .
+    container_name: tentickle
+    ports:
+      - "18789:18789"
+    volumes:
+      - .:/workspace
+      - tentickle-data:/root/.tentickle
+    working_dir: /workspace
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    restart: unless-stopped
+
+volumes:
+  tentickle-data:

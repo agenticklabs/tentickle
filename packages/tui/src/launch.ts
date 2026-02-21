@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { createClient } from "@agentick/client";
+import { createClient, createWSTransport } from "@agentick/client";
 import { createLocalTransport } from "@agentick/core";
 import type { App } from "@agentick/core";
 import type { ClientTransport } from "@agentick/shared";
@@ -93,22 +93,33 @@ export interface GatewayLaunchOptions {
   devTools?: boolean;
   /** Gateway plugins (connectors, integrations) */
   plugins?: GatewayPlugin[];
+  /** Remote daemon URL (ws://). Takes precedence over TENTICKLE_DAEMON_URL env var. */
+  daemonUrl?: string;
 }
 
 export async function launchGateway(options: GatewayLaunchOptions): Promise<void> {
-  const { apps: factories, defaultAgent, maxTicks = 250, devTools = true, plugins } = options;
+  const {
+    apps: factories,
+    defaultAgent,
+    maxTicks = 250,
+    devTools = true,
+    plugins,
+    daemonUrl,
+  } = options;
 
   normalizeToGitRoot();
 
-  // Try connecting to a running daemon first
-  const socketPath = getSocketPath();
-  const daemonTransport = await tryDaemonConnection(socketPath);
+  // Try connecting to a remote daemon (WebSocket) or local daemon (Unix socket).
+  // Precedence: --url flag > TENTICKLE_DAEMON_URL env var > Unix socket probe.
+  const remoteUrl = daemonUrl ?? process.env.TENTICKLE_DAEMON_URL;
+  const daemonTransport = remoteUrl
+    ? await tryRemoteConnection(remoteUrl)
+    : await tryDaemonConnection(getSocketPath());
 
   if (daemonTransport) {
-    // Connected to running daemon — lightweight TUI only.
-    // No app creation, no store binding, no cron. The daemon owns all of that.
-    console.log(`Connected to daemon via ${socketPath}`);
-    const client = createClient({ baseUrl: "unix://", transport: daemonTransport });
+    const label = remoteUrl ?? getSocketPath();
+    console.log(`Connected to daemon via ${label}`);
+    const client = createClient({ baseUrl: remoteUrl ?? "unix://", transport: daemonTransport });
     const tui = createTUI({ client, sessionId: "tui", ui: TentickleTUI });
     try {
       await tui.start();
@@ -181,6 +192,23 @@ export async function launchGateway(options: GatewayLaunchOptions): Promise<void
 // ============================================================================
 // Daemon connection probe
 // ============================================================================
+
+/**
+ * Try to connect to a remote daemon over WebSocket.
+ * Returns the transport if successful, null if unreachable.
+ */
+async function tryRemoteConnection(url: string): Promise<ClientTransport | null> {
+  try {
+    const transport = createWSTransport({
+      baseUrl: url,
+      reconnect: { enabled: true, maxAttempts: 3, delay: 1000 },
+    });
+    await transport.connect();
+    return transport;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Try to connect to a running daemon over Unix socket.

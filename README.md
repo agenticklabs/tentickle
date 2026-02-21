@@ -250,6 +250,46 @@ pnpm test        # Run tests
 pnpm typecheck   # TypeScript strict mode
 ```
 
+## Docker
+
+Run tentickle as a containerized daemon. Requires Docker and an API key.
+
+```bash
+# Start the daemon (builds on first run)
+ANTHROPIC_API_KEY=sk-... docker compose up -d
+
+# TUI inside the container
+docker exec -it tentickle tentickle
+
+# Check status
+docker exec tentickle tentickle status
+
+# Stop
+docker compose down
+```
+
+The container runs the daemon in foreground mode with a WebSocket listener on port 18789. The workspace is mounted at `/workspace` and persistent data lives in a Docker volume at `/root/.tentickle`.
+
+Connect the TUI from the host to the containerized daemon:
+
+```bash
+tentickle --url ws://localhost:18789
+```
+
+Or via env var (`--url` takes precedence if both are set):
+
+```bash
+export TENTICKLE_DAEMON_URL=ws://localhost:18789
+tentickle
+```
+
+The `--port` flag also works outside Docker for exposing the daemon over the network:
+
+```bash
+tentickle start --port 18789                  # WebSocket + Unix socket
+tentickle start --port 18789 --host 127.0.0.1 # Bind to localhost only
+```
+
 ## Status
 
 Early. The agents work and handle real tasks, but there's no polished CLI binary you can `npx`, no `init` command, no `doctor`.
@@ -268,12 +308,12 @@ What works today:
 - Telegram and iMessage connectors
 - Rich terminal UI with confirmations, completions, context injection, and attachments
 - Daemon mode — gateway as background process, TUI connects over Unix socket
+- Docker support — containerized daemon with WebSocket access
 
 What's next:
 
 - Installable CLI (`npx tentickle`) with subcommands (`send`, `sessions`)
 - Shared TUI base — extract common chat UI for coding and main agents
-- Docker container support for headless operation
 - Error recovery patterns
 - More specialized agents (review, test, debug)
 

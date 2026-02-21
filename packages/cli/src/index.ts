@@ -25,6 +25,7 @@ export function run(argv = process.argv): void {
     .option("--agent <name>", `default agent for TUI (${Object.keys(AGENTS).join(", ")})`, "main")
     .option("--max-ticks <n>", "maximum model calls per execution", "250")
     .option("--no-devtools", "disable devtools server")
+    .option("--url <ws-url>", "connect to remote daemon (ws://host:port)")
     .action(async (opts) => {
       if (!AGENTS[opts.agent]) {
         console.error(`Unknown agent: ${opts.agent}\nAvailable: ${Object.keys(AGENTS).join(", ")}`);
@@ -57,6 +58,7 @@ export function run(argv = process.argv): void {
         maxTicks: parseInt(opts.maxTicks, 10),
         devTools: opts.devtools,
         plugins,
+        daemonUrl: opts.url,
       });
     });
 
@@ -68,13 +70,23 @@ export function run(argv = process.argv): void {
     .option("--agent <name>", "default agent", "main")
     .option("--max-ticks <n>", "maximum model calls per execution", "250")
     .option("--no-devtools", "disable devtools server")
+    .option("--port <n>", "WebSocket port (enables network access)")
+    .option("--host <addr>", "bind address (default: 0.0.0.0)")
     .option("--log-file <path>", "daemon log file (default: ~/.tentickle/daemon.log)")
     .option("--daemon-child", "internal: marks this process as the forked daemon child")
     .action(async (opts) => {
       if (opts.daemonChild) {
         // We're the forked background child — run the gateway directly
         const socketPath = getSocketPath();
-        await runDaemonProcess(socketPath, opts, AGENTS);
+        await runDaemonProcess(
+          socketPath,
+          {
+            ...opts,
+            maxTicks: parseInt(opts.maxTicks, 10),
+            port: opts.port ? parseInt(opts.port, 10) : undefined,
+          },
+          AGENTS,
+        );
         return;
       }
 
@@ -85,6 +97,8 @@ export function run(argv = process.argv): void {
           maxTicks: parseInt(opts.maxTicks, 10),
           devTools: opts.devtools,
           logFile: opts.logFile,
+          port: opts.port ? parseInt(opts.port, 10) : undefined,
+          host: opts.host,
         },
         AGENTS,
       );

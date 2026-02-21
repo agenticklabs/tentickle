@@ -42,6 +42,8 @@ export interface DaemonOptions {
   maxTicks?: number;
   devTools?: boolean;
   logFile?: string;
+  port?: number;
+  host?: string;
 }
 
 export interface DaemonStatus {
@@ -129,12 +131,16 @@ export async function runDaemonProcess(
     );
   }
 
-  // Create gateway with Unix socket
+  // Create gateway — always Unix socket, optionally WebSocket on a port
   const gateway = createGateway({
     apps: gatewayApps,
     defaultApp: defaultAgent,
     socketPath,
     plugins,
+    ...(opts.port && {
+      port: opts.port,
+      host: opts.host ?? "0.0.0.0",
+    }),
   });
 
   // Cron via local transport
@@ -163,7 +169,9 @@ export async function runDaemonProcess(
 
   // Write pidfile
   writePid(process.pid);
-  console.log(`Daemon started on ${socketPath} (pid ${process.pid})`);
+  const listeners = [socketPath];
+  if (opts.port) listeners.push(`ws://${opts.host ?? "0.0.0.0"}:${opts.port}`);
+  console.log(`Daemon started on ${listeners.join(" + ")} (pid ${process.pid})`);
 
   // Graceful shutdown
   let shuttingDown = false;
@@ -216,6 +224,8 @@ function spawnBackground(socketPath: string, opts: DaemonOptions): void {
   if (opts.agent) args.push("--agent", opts.agent);
   if (opts.maxTicks) args.push("--max-ticks", String(opts.maxTicks));
   if (opts.devTools) args.push("--devtools");
+  if (opts.port) args.push("--port", String(opts.port));
+  if (opts.host) args.push("--host", opts.host);
 
   // Open log file for stdout/stderr
   let logFd: number;
