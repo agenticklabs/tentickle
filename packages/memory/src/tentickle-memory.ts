@@ -5,7 +5,9 @@ import type {
   MemoryEntry,
   RecallQuery,
   RecallResult,
+  RecallHints,
   ScoredMemoryEntry,
+  TopicCount,
 } from "./types.js";
 
 type DatabaseSync = InstanceType<typeof import("node:sqlite").DatabaseSync>;
@@ -71,11 +73,24 @@ function normalizeScore(rank: number): number {
 /** RRF constant — standard value from the original paper. */
 const RRF_K = 60;
 
+/** Default time decay lambda: 30d→86%, 90d→64%, 365d→16%. */
+const DEFAULT_DECAY_LAMBDA = 0.005;
+
+/** Default cosine similarity threshold for dedup (0.90 = very similar). */
+const DEFAULT_DEDUP_THRESHOLD = 0.9;
+
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+/** Weight for access count boost: score * (1 + log1p(accessCount) * weight). */
+const ACCESS_BOOST_WEIGHT = 0.1;
+
 export type EmbedFn = (texts: string[]) => Promise<EmbedResult>;
 
 export interface VecOptions {
   embed: EmbedFn;
   dimensions: number;
+  /** Cosine similarity threshold for dedup on remember. Set to 0 to disable. Default: 0.90 */
+  dedupThreshold?: number;
 }
 
 export class TentickleMemory {
@@ -86,6 +101,7 @@ export class TentickleMemory {
   private vecEnabled = false;
   private vecDimensions = 0;
   private embedFn: EmbedFn | null = null;
+  private dedupThreshold = DEFAULT_DEDUP_THRESHOLD;
   private pendingEmbeds = new Map<string, Promise<void>>();
   private backfillPromise: Promise<void> | null = null;
 
@@ -121,6 +137,7 @@ export class TentickleMemory {
 
       this.embedFn = options.embed;
       this.vecDimensions = options.dimensions;
+      this.dedupThreshold = options.dedupThreshold ?? DEFAULT_DEDUP_THRESHOLD;
       this.vecEnabled = true;
       this.startBackfill();
       return true;
@@ -192,7 +209,9 @@ export class TentickleMemory {
     const limit = query.limit ?? 10;
     const trimmed = query.query.trim();
     if (!trimmed) {
-      return { entries: [] };
+      const topicMap = this.getTopicMap(query.namespace);
+      const hints: RecallHints = { matchedTopics: [], relatedTopics: [], topicMap };
+      return { entries: [], hints };
     }
 
     // Always run FTS
@@ -210,8 +229,32 @@ export class TentickleMemory {
     }
 
     // Fuse or return FTS-only
-    const entries =
-      vecResults.length > 0 ? this.rrfFuse(ftsResults, vecResults, limit) : ftsResults;
+    let entries = vecResults.length > 0 ? this.rrfFuse(ftsResults, vecResults, limit) : ftsResults;
+
+    // Post-scoring adjustments: time decay + access boost
+    const decay = query.decay ?? DEFAULT_DECAY_LAMBDA;
+    if (entries.length > 0) {
+      entries = applyPostScoring(entries, decay, limit);
+    }
+
+    // Collect hints
+    const finalIds = new Set(entries.map((e) => e.id));
+    const matchedTopics = [
+      ...new Set(entries.map((e) => e.topic).filter((t): t is string => t !== null)),
+    ];
+    const matchedTopicSet = new Set(matchedTopics);
+    const relatedTopics =
+      query.topic != null
+        ? []
+        : [
+            ...new Set(
+              vecResults
+                .filter((e) => !finalIds.has(e.id) && e.topic !== null)
+                .map((e) => e.topic as string),
+            ),
+          ].filter((t) => !matchedTopicSet.has(t));
+    const topicMap = this.getTopicMap(query.namespace);
+    const hints: RecallHints = { matchedTopics, relatedTopics, topicMap };
 
     // Update access tracking for matched entries
     if (entries.length > 0) {
@@ -231,7 +274,7 @@ export class TentickleMemory {
       }
     }
 
-    return { entries };
+    return { entries, hints };
   }
 
   get(id: string): MemoryEntry | null {
@@ -281,6 +324,24 @@ export class TentickleMemory {
     this.destroyed = true;
     this.pendingEmbeds.clear();
     this.backfillPromise = null;
+  }
+
+  // ==========================================================================
+  // Private — Topic map
+  // ==========================================================================
+
+  private getTopicMap(namespace?: string): TopicCount[] {
+    const params: string[] = [];
+    let sql = `SELECT topic, COUNT(*) as count FROM memories WHERE topic IS NOT NULL`;
+    if (namespace != null) {
+      sql += ` AND namespace = ?`;
+      params.push(namespace);
+    }
+    sql += ` GROUP BY topic ORDER BY count DESC LIMIT 50`;
+    return rows<{ topic: string; count: number }>(this.db.prepare(sql).all(...params)).map((r) => ({
+      topic: r.topic,
+      count: r.count,
+    }));
   }
 
   // ==========================================================================
@@ -438,6 +499,31 @@ export class TentickleMemory {
     const result = await this.embedFn([content]);
     if (this.destroyed) return;
     const blob = new Float32Array(result.embeddings[0]);
+
+    // Dedup: check for semantically similar existing memory before inserting
+    if (this.dedupThreshold > 0) {
+      const existing = this.findSimilar(blob, namespace, id);
+      if (existing) {
+        // Merge into existing: update content + timestamp, delete the new row
+        const now = Date.now();
+        try {
+          this.db
+            .prepare(`UPDATE memories SET content = ?, updated_at = ? WHERE id = ?`)
+            .run(content, now, existing);
+          this.db.prepare(`DELETE FROM memories WHERE id = ?`).run(id);
+          // Update the existing entry's vector with the new (fresher) embedding
+          this.db
+            .prepare(
+              `INSERT OR REPLACE INTO memory_vec (memory_id, namespace, embedding) VALUES (?, ?, ?)`,
+            )
+            .run(existing, namespace, blob);
+        } catch {
+          // DB might be closed during shutdown
+        }
+        return;
+      }
+    }
+
     try {
       this.db
         .prepare(
@@ -446,6 +532,33 @@ export class TentickleMemory {
         .run(id, namespace, blob);
     } catch {
       // DB might be closed during shutdown
+    }
+  }
+
+  /**
+   * Find an existing memory in the same namespace that's semantically similar.
+   * Returns the existing memory's ID, or null if nothing is similar enough.
+   */
+  private findSimilar(queryVec: Float32Array, namespace: string, excludeId: string): string | null {
+    try {
+      // Fetch top-2 so we can skip self if it's already inserted
+      const matched = rows<{ memory_id: string; distance: number }>(
+        this.db
+          .prepare(
+            `SELECT memory_id, distance FROM memory_vec
+             WHERE embedding MATCH ? AND k = 2 AND namespace = ?`,
+          )
+          .all(queryVec, namespace),
+      );
+      const maxDistance = 1 - this.dedupThreshold;
+      for (const r of matched) {
+        if (r.memory_id !== excludeId && r.distance < maxDistance) {
+          return r.memory_id;
+        }
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 
@@ -490,6 +603,41 @@ export class TentickleMemory {
       throw new Error("TentickleMemory has been destroyed");
     }
   }
+}
+
+/**
+ * Apply exponential time decay to scored entries.
+ * Age is measured from lastAccessedAt (if ever accessed) or createdAt.
+ * Recalled memories are "refreshed" — accessing keeps them alive.
+ */
+function applyPostScoring(
+  entries: ScoredMemoryEntry[],
+  lambda: number,
+  limit: number,
+): ScoredMemoryEntry[] {
+  const now = Date.now();
+  const adjusted = entries.map((entry) => {
+    let factor = 1;
+    // Time decay (skip when lambda=0)
+    if (lambda > 0) {
+      const referenceTime = entry.lastAccessedAt ?? entry.createdAt;
+      const ageDays = (now - referenceTime) / MS_PER_DAY;
+      factor = Math.exp(-lambda * ageDays);
+    }
+    // Access count boost (always applied)
+    const accessBoost = 1 + Math.log1p(entry.accessCount) * ACCESS_BOOST_WEIGHT;
+    return { ...entry, score: entry.score * factor * accessBoost };
+  });
+  adjusted.sort((a, b) => b.score - a.score);
+  const top = adjusted.slice(0, limit);
+  if (top.length === 0) return top;
+  const maxScore = top[0].score;
+  if (maxScore > 0) {
+    for (const entry of top) {
+      entry.score = entry.score / maxScore;
+    }
+  }
+  return top;
 }
 
 /**

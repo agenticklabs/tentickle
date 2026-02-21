@@ -4,6 +4,8 @@ export type {
   MemoryEntry,
   RecallQuery,
   RecallResult,
+  RecallHints,
+  TopicCount,
   ScoredMemoryEntry,
 } from "./types.js";
 export { ensureMemorySchema } from "./schema.js";

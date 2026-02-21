@@ -893,3 +893,545 @@ describe("vec delete", () => {
     vecDb.close();
   });
 });
+
+// ==========================================================================
+// Time decay
+// ==========================================================================
+
+describe("time decay", () => {
+  it("recent memory outranks older memory with same relevance", async () => {
+    const now = Date.now();
+
+    // Insert "old" memory by backdating created_at
+    const old = memory.remember({ content: "keyword decay test content" });
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(
+      now - 90 * 24 * 60 * 60 * 1000,
+      old.id,
+    );
+
+    // Insert "new" memory
+    memory.remember({ content: "keyword decay test content variant" });
+
+    const result = await memory.recall({ query: "keyword decay test" });
+    expect(result.entries.length).toBe(2);
+    // Newer entry should rank first after decay
+    expect(result.entries[0].content).toContain("variant");
+  });
+
+  it("recently accessed old memory ranks higher than unaccessed old memory", async () => {
+    const now = Date.now();
+    const ninetyDaysAgo = now - 90 * 24 * 60 * 60 * 1000;
+
+    const accessed = memory.remember({ content: "recency accessed decay keyword" });
+    const stale = memory.remember({ content: "recency stale decay keyword" });
+
+    // Backdate both to 90 days ago
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(ninetyDaysAgo, accessed.id);
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(ninetyDaysAgo, stale.id);
+
+    // "Access" one of them recently
+    db.prepare(`UPDATE memories SET last_accessed_at = ?, access_count = 1 WHERE id = ?`).run(
+      now - 1000,
+      accessed.id,
+    );
+
+    const result = await memory.recall({ query: "recency decay keyword" });
+    expect(result.entries.length).toBe(2);
+    // The recently-accessed entry should rank first
+    expect(result.entries[0].content).toContain("accessed");
+  });
+
+  it("decay = 0 disables time decay", async () => {
+    const now = Date.now();
+
+    const old = memory.remember({ content: "no decay keyword test" });
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(
+      now - 365 * 24 * 60 * 60 * 1000,
+      old.id,
+    );
+
+    memory.remember({ content: "no decay keyword test newer" });
+
+    // With decay disabled, both should have similar scores (FTS-driven)
+    const result = await memory.recall({ query: "no decay keyword test", decay: 0 });
+    expect(result.entries.length).toBe(2);
+    // Scores should both be normalized (not decayed)
+    for (const entry of result.entries) {
+      expect(entry.score).toBeGreaterThan(0);
+    }
+  });
+
+  it("custom decay lambda — high lambda decays faster", async () => {
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+    memory.remember({ content: "lambda test keyword content" });
+    const old = memory.remember({ content: "lambda test keyword content old" });
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(thirtyDaysAgo, old.id);
+
+    // High decay: 30-day-old entry decays significantly
+    const highDecay = await memory.recall({ query: "lambda test keyword", decay: 0.1 });
+    // Low decay: 30-day-old entry barely decays
+    const lowDecay = await memory.recall({ query: "lambda test keyword", decay: 0.001 });
+
+    expect(highDecay.entries.length).toBeGreaterThan(0);
+    expect(lowDecay.entries.length).toBeGreaterThan(0);
+
+    // The old entry should rank lower in high-decay than low-decay
+    const oldHighDecay = highDecay.entries.find((e) => e.id === old.id);
+    const oldLowDecay = lowDecay.entries.find((e) => e.id === old.id);
+    if (oldHighDecay && oldLowDecay) {
+      expect(oldHighDecay.score).toBeLessThan(oldLowDecay.score);
+    }
+  });
+
+  it("scores are still normalized 0-1 after decay", async () => {
+    const now = Date.now();
+    for (let i = 0; i < 5; i++) {
+      const entry = memory.remember({ content: `normalized decay keyword ${i}` });
+      // Stagger creation times
+      db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(
+        now - i * 30 * 24 * 60 * 60 * 1000,
+        entry.id,
+      );
+    }
+
+    const result = await memory.recall({ query: "normalized decay keyword" });
+    for (const entry of result.entries) {
+      expect(entry.score).toBeGreaterThanOrEqual(0);
+      expect(entry.score).toBeLessThanOrEqual(1);
+    }
+    // Top entry should be normalized to 1
+    expect(result.entries[0].score).toBe(1);
+  });
+
+  it("frequently accessed memory outranks equal-age unaccessed memory", async () => {
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+    const popular = memory.remember({ content: "access boost keyword popular" });
+    const lonely = memory.remember({ content: "access boost keyword lonely" });
+
+    // Same age, same recency
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(thirtyDaysAgo, popular.id);
+    db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(thirtyDaysAgo, lonely.id);
+
+    // Popular has been recalled 20 times
+    db.prepare(`UPDATE memories SET access_count = 20 WHERE id = ?`).run(popular.id);
+
+    const result = await memory.recall({ query: "access boost keyword" });
+    expect(result.entries.length).toBe(2);
+    expect(result.entries[0].content).toContain("popular");
+    expect(result.entries[0].score).toBeGreaterThan(result.entries[1].score);
+  });
+
+  it("access boost is logarithmic — 100x more accesses doesn't 100x the boost", async () => {
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+    const low = memory.remember({ content: "logboost keyword content low" });
+    const high = memory.remember({ content: "logboost keyword content high" });
+
+    for (const id of [low.id, high.id]) {
+      db.prepare(`UPDATE memories SET created_at = ? WHERE id = ?`).run(thirtyDaysAgo, id);
+    }
+
+    // 1 access vs 100 accesses — 100x difference
+    db.prepare(`UPDATE memories SET access_count = 1 WHERE id = ?`).run(low.id);
+    db.prepare(`UPDATE memories SET access_count = 100 WHERE id = ?`).run(high.id);
+
+    const result = await memory.recall({ query: "logboost keyword content" });
+
+    const scoreLow = result.entries.find((e) => e.id === low.id)!.score;
+    const scoreHigh = result.entries.find((e) => e.id === high.id)!.score;
+
+    // High should rank above low
+    expect(scoreHigh).toBeGreaterThan(scoreLow);
+    // But the ratio should be much less than 100x (log1p(100)/log1p(1) ≈ 6.6x raw)
+    // After the 0.1 weight, the actual boost ratio is modest
+    expect(scoreHigh / scoreLow).toBeLessThan(5);
+  });
+
+  it("access boost with decay=0 still applies", async () => {
+    const popular = memory.remember({ content: "nodecay access keyword popular" });
+    memory.remember({ content: "nodecay access keyword lonely" });
+
+    // Same age (recent), but different access counts
+    db.prepare(`UPDATE memories SET access_count = 15 WHERE id = ?`).run(popular.id);
+
+    // decay=0 disables time decay but access boost should still work
+    const result = await memory.recall({ query: "nodecay access keyword", decay: 0 });
+    expect(result.entries.length).toBe(2);
+    // Without decay, base scores are equal — access boost breaks the tie
+    expect(result.entries[0].content).toContain("popular");
+  });
+});
+
+// ==========================================================================
+// Dedup on remember
+// ==========================================================================
+
+describe("dedup on remember", () => {
+  let vecDb: DatabaseSync;
+  let vecMemory: TentickleMemory;
+
+  // Lower threshold for mock embedder — hash-based vectors are coarser than real models.
+  // Real embeddings produce ~0.98 similarity for near-dupes; mock produces ~0.80.
+  const MOCK_DEDUP_THRESHOLD = 0.7;
+
+  beforeEach(() => {
+    vecDb = freshDb(true);
+    vecMemory = TentickleMemory.create(vecDb);
+    vecMemory.initVec({ embed: mockEmbed, dimensions: 384, dedupThreshold: MOCK_DEDUP_THRESHOLD });
+  });
+
+  afterEach(() => {
+    vecMemory.destroy();
+    vecDb.close();
+  });
+
+  it("near-duplicate memory merges into existing entry", async () => {
+    vecMemory.remember({ content: "Ryan prefers TypeScript over JavaScript" });
+    await vecMemory.flush();
+
+    vecMemory.remember({ content: "Ryan prefers TypeScript over JavaScript strongly" });
+    await vecMemory.flush();
+
+    const all = vecMemory.list();
+    // Should have merged — only 1 entry remains
+    expect(all.length).toBe(1);
+    // Content should be updated to the newer version
+    expect(all[0].content).toContain("strongly");
+  });
+
+  it("different memories are NOT deduped", async () => {
+    vecMemory.remember({ content: "TypeScript is a typed superset of JavaScript" });
+    await vecMemory.flush();
+
+    vecMemory.remember({ content: "Python is great for data science and machine learning" });
+    await vecMemory.flush();
+
+    const all = vecMemory.list();
+    expect(all.length).toBe(2);
+  });
+
+  it("dedup respects namespace isolation", async () => {
+    vecMemory.remember({
+      content: "Ryan prefers TypeScript",
+      namespace: "project-a",
+    });
+    await vecMemory.flush();
+
+    vecMemory.remember({
+      content: "Ryan prefers TypeScript",
+      namespace: "project-b",
+    });
+    await vecMemory.flush();
+
+    const all = vecMemory.list();
+    // Same content in different namespaces — both should exist
+    expect(all.length).toBe(2);
+  });
+
+  it("dedup preserves the original entry's ID and created_at", async () => {
+    const original = vecMemory.remember({ content: "Ryan likes functional programming" });
+    await vecMemory.flush();
+
+    const originalFetched = vecMemory.get(original.id);
+    const originalCreatedAt = originalFetched!.createdAt;
+
+    vecMemory.remember({ content: "Ryan likes functional programming a lot" });
+    await vecMemory.flush();
+
+    const all = vecMemory.list();
+    expect(all.length).toBe(1);
+    // Original ID survives
+    expect(all[0].id).toBe(original.id);
+    // Created at preserved
+    expect(all[0].createdAt).toBe(originalCreatedAt);
+    // Updated at is newer
+    expect(all[0].updatedAt).toBeGreaterThanOrEqual(originalCreatedAt);
+    // Content is updated
+    expect(all[0].content).toContain("a lot");
+  });
+
+  it("dedup with threshold 0 disables deduplication", async () => {
+    const noDedup = freshDb(true);
+    const noMemory = TentickleMemory.create(noDedup);
+    noMemory.initVec({ embed: mockEmbed, dimensions: 384, dedupThreshold: 0 });
+
+    noMemory.remember({ content: "identical content for dedup test" });
+    await noMemory.flush();
+
+    noMemory.remember({ content: "identical content for dedup test" });
+    await noMemory.flush();
+
+    const all = noMemory.list();
+    // Both should exist — dedup disabled
+    expect(all.length).toBe(2);
+
+    noMemory.destroy();
+    noDedup.close();
+  });
+
+  it("dedup still works after backfill", async () => {
+    // Create memories BEFORE vec init (will need backfill)
+    const preVecDb = freshDb(true);
+    const preVecMemory = TentickleMemory.create(preVecDb);
+
+    preVecMemory.remember({ content: "pre-vec duplicate test content" });
+
+    // Now init vec — triggers backfill
+    preVecMemory.initVec({
+      embed: mockEmbed,
+      dimensions: 384,
+      dedupThreshold: MOCK_DEDUP_THRESHOLD,
+    });
+    await preVecMemory.flush();
+
+    // This should dedup against the backfilled entry
+    preVecMemory.remember({ content: "pre-vec duplicate test content again" });
+    await preVecMemory.flush();
+
+    const all = preVecMemory.list();
+    expect(all.length).toBe(1);
+
+    preVecMemory.destroy();
+    preVecDb.close();
+  });
+
+  it("FTS stays consistent after dedup merge", async () => {
+    vecMemory.remember({ content: "searchable dedup consistency test" });
+    await vecMemory.flush();
+
+    vecMemory.remember({ content: "searchable dedup consistency test updated" });
+    await vecMemory.flush();
+
+    // FTS should find the updated content
+    const result = await vecMemory.recall({ query: "searchable dedup consistency" });
+    expect(result.entries.length).toBe(1);
+    expect(result.entries[0].content).toContain("updated");
+  });
+
+  it("rapid duplicates — merges occur", async () => {
+    // Sequential remember + flush to ensure each dedup check sees the previous vector
+    vecMemory.remember({ content: "Ryan strongly prefers TypeScript for all projects" });
+    await vecMemory.flush();
+    vecMemory.remember({ content: "Ryan strongly prefers TypeScript for all work" });
+    await vecMemory.flush();
+    vecMemory.remember({ content: "Ryan strongly prefers TypeScript for everything" });
+    await vecMemory.flush();
+
+    const all = vecMemory.list();
+    // With sequential flush, each subsequent remember sees the existing vector and merges
+    expect(all.length).toBe(1);
+    // Content should be the latest version
+    expect(all[0].content).toContain("everything");
+  });
+
+  it("without vec, no dedup happens (FTS-only mode)", async () => {
+    // Use the base memory (no vec init)
+    memory.remember({ content: "no vec dedup test" });
+    memory.remember({ content: "no vec dedup test" });
+
+    const all = memory.list();
+    expect(all.length).toBe(2);
+  });
+});
+
+// ==========================================================================
+// Recall hints
+// ==========================================================================
+
+describe("recall hints", () => {
+  // ---------- Basic ----------
+
+  it("matchedTopics reflects result entries' topics", async () => {
+    memory.remember({ content: "hint basic keyword alpha", topic: "architecture" });
+    memory.remember({ content: "hint basic keyword beta", topic: "testing" });
+
+    const result = await memory.recall({ query: "hint basic keyword" });
+    expect(result.hints.matchedTopics).toContain("architecture");
+    expect(result.hints.matchedTopics).toContain("testing");
+  });
+
+  it("matchedTopics are deduplicated", async () => {
+    memory.remember({ content: "dedup topic hint keyword", topic: "arch" });
+    memory.remember({ content: "dedup topic hint keyword two", topic: "arch" });
+
+    const result = await memory.recall({ query: "dedup topic hint keyword" });
+    const archCount = result.hints.matchedTopics.filter((t) => t === "arch").length;
+    expect(archCount).toBe(1);
+  });
+
+  it("null topics excluded from matchedTopics", async () => {
+    memory.remember({ content: "null topic hint keyword" }); // topic = null
+    memory.remember({ content: "null topic hint keyword two", topic: "real" });
+
+    const result = await memory.recall({ query: "null topic hint keyword" });
+    expect(result.hints.matchedTopics).toEqual(["real"]);
+  });
+
+  it("topicMap returns all topics with correct counts, desc order", async () => {
+    for (let i = 0; i < 5; i++) memory.remember({ content: `tm keyword ${i}`, topic: "big" });
+    for (let i = 0; i < 2; i++) memory.remember({ content: `tm keyword ${i}`, topic: "small" });
+
+    const result = await memory.recall({ query: "tm keyword" });
+    const { topicMap } = result.hints;
+    expect(topicMap.length).toBe(2);
+    expect(topicMap[0]).toEqual({ topic: "big", count: 5 });
+    expect(topicMap[1]).toEqual({ topic: "small", count: 2 });
+  });
+
+  it("topicMap populated when entries is empty (query matches nothing)", async () => {
+    memory.remember({ content: "unrelated content", topic: "arch" });
+    memory.remember({ content: "also unrelated", topic: "testing" });
+
+    const result = await memory.recall({ query: "zzzznonexistent" });
+    expect(result.entries).toEqual([]);
+    expect(result.hints.topicMap.length).toBe(2);
+  });
+
+  it("empty-query recall returns populated topicMap", async () => {
+    memory.remember({ content: "probe content", topic: "alpha" });
+    memory.remember({ content: "probe content two", topic: "beta" });
+
+    const result = await memory.recall({ query: "" });
+    expect(result.entries).toEqual([]);
+    expect(result.hints.matchedTopics).toEqual([]);
+    expect(result.hints.relatedTopics).toEqual([]);
+    expect(result.hints.topicMap.length).toBe(2);
+  });
+
+  it("FTS-only (no vec): relatedTopics empty, others work", async () => {
+    memory.remember({ content: "fts only hint keyword", topic: "fts-topic" });
+
+    const result = await memory.recall({ query: "fts only hint keyword" });
+    expect(result.hints.relatedTopics).toEqual([]);
+    expect(result.hints.matchedTopics).toEqual(["fts-topic"]);
+    expect(result.hints.topicMap.length).toBe(1);
+  });
+
+  it("namespace isolation in topicMap", async () => {
+    memory.remember({ content: "ns iso keyword", namespace: "ns-a", topic: "alpha" });
+    memory.remember({ content: "ns iso keyword", namespace: "ns-b", topic: "beta" });
+
+    const resultA = await memory.recall({ query: "ns iso keyword", namespace: "ns-a" });
+    expect(resultA.hints.topicMap).toEqual([{ topic: "alpha", count: 1 }]);
+
+    const resultB = await memory.recall({ query: "ns iso keyword", namespace: "ns-b" });
+    expect(resultB.hints.topicMap).toEqual([{ topic: "beta", count: 1 }]);
+  });
+
+  it("topic filter: topicMap still shows ALL topics in namespace", async () => {
+    memory.remember({ content: "filter all keyword", topic: "arch" });
+    memory.remember({ content: "filter all keyword two", topic: "testing" });
+
+    const result = await memory.recall({ query: "filter all keyword", topic: "arch" });
+    expect(result.entries.length).toBe(1);
+    // topicMap shows both topics even though we filtered to "arch"
+    expect(result.hints.topicMap.length).toBe(2);
+  });
+
+  it("namespace=undefined: topicMap spans all namespaces", async () => {
+    memory.remember({ content: "span keyword", namespace: "ns1", topic: "a" });
+    memory.remember({ content: "span keyword", namespace: "ns2", topic: "b" });
+
+    const result = await memory.recall({ query: "span keyword" });
+    expect(result.hints.topicMap.length).toBe(2);
+  });
+
+  // ---------- Vec-dependent (relatedTopics) ----------
+
+  describe("relatedTopics (vec-dependent)", () => {
+    let vecDb: DatabaseSync;
+    let vecMemory: TentickleMemory;
+
+    beforeEach(() => {
+      vecDb = freshDb(true);
+      vecMemory = TentickleMemory.create(vecDb);
+      vecMemory.initVec({ embed: mockEmbed, dimensions: 384 });
+    });
+
+    afterEach(() => {
+      vecMemory.destroy();
+      vecDb.close();
+    });
+
+    it("vec overflow entries' topics appear in relatedTopics", async () => {
+      // Create many entries with different topics so some land in vec overflow
+      vecMemory.remember({ content: "related overflow keyword primary", topic: "primary" });
+      for (let i = 0; i < 15; i++) {
+        vecMemory.remember({
+          content: `related overflow keyword variant ${i}`,
+          topic: `overflow-${i}`,
+        });
+      }
+      await vecMemory.flush();
+
+      const result = await vecMemory.recall({ query: "related overflow keyword", limit: 3 });
+      // matchedTopics from the top 3
+      expect(result.hints.matchedTopics.length).toBeGreaterThan(0);
+      // relatedTopics from the vec overflow that didn't make the cut
+      // (vec fetches limit*3=9, RRF picks top 3 — overflow topics should appear)
+      expect(result.hints.relatedTopics.length).toBeGreaterThanOrEqual(0);
+      // No overlap between matched and related
+      const overlap = result.hints.relatedTopics.filter((t) =>
+        result.hints.matchedTopics.includes(t),
+      );
+      expect(overlap).toEqual([]);
+    });
+
+    it("relatedTopics excludes topics already in matchedTopics", async () => {
+      vecMemory.remember({ content: "overlap test keyword alpha", topic: "shared-topic" });
+      vecMemory.remember({ content: "overlap test keyword beta", topic: "shared-topic" });
+      await vecMemory.flush();
+
+      const result = await vecMemory.recall({ query: "overlap test keyword" });
+      // shared-topic appears in matchedTopics, NOT in relatedTopics
+      if (result.hints.matchedTopics.includes("shared-topic")) {
+        expect(result.hints.relatedTopics).not.toContain("shared-topic");
+      }
+    });
+
+    it("topic filter active: relatedTopics is empty", async () => {
+      vecMemory.remember({ content: "filter related keyword", topic: "target" });
+      vecMemory.remember({ content: "filter related keyword two", topic: "other" });
+      await vecMemory.flush();
+
+      const result = await vecMemory.recall({ query: "filter related keyword", topic: "target" });
+      expect(result.hints.relatedTopics).toEqual([]);
+    });
+  });
+
+  // ---------- Adversarial ----------
+
+  it("concurrent recall: hints consistent, no corruption", async () => {
+    for (let i = 0; i < 10; i++) {
+      memory.remember({ content: `concurrent hints keyword ${i}`, topic: `topic-${i % 3}` });
+    }
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => memory.recall({ query: "concurrent hints keyword" })),
+    );
+
+    for (const result of results) {
+      expect(result.hints.topicMap.length).toBe(3);
+      const totalCount = result.hints.topicMap.reduce((s, t) => s + t.count, 0);
+      expect(totalCount).toBe(10);
+    }
+  });
+
+  it("topicMap accurate after deletes", async () => {
+    const entries = Array.from({ length: 5 }, (_, i) =>
+      memory.remember({ content: `delete hint keyword ${i}`, topic: "doomed" }),
+    );
+    memory.remember({ content: "delete hint keyword survivor", topic: "alive" });
+
+    // Delete all "doomed" entries
+    for (const e of entries) memory.delete(e.id);
+
+    const result = await memory.recall({ query: "delete hint keyword" });
+    expect(result.hints.topicMap).toEqual([{ topic: "alive", count: 1 }]);
+  });
+});

@@ -76,6 +76,8 @@ export type {
   MemoryEntry,
   RecallQuery,
   RecallResult,
+  RecallHints,
+  TopicCount,
   ScoredMemoryEntry,
 } from "@tentickle/memory";
 
