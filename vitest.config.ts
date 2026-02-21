@@ -22,9 +22,6 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      "agentick/jsx-runtime": "../agentick/packages/core/src/jsx/jsx-runtime.ts",
-      "agentick/jsx-dev-runtime": "../agentick/packages/core/src/jsx/jsx-runtime.ts",
-    },
+    conditions: ["import", "types"],
   },
 });
