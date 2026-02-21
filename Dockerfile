@@ -33,6 +33,18 @@ RUN pnpm install --no-frozen-lockfile
 COPY . .
 RUN pnpm build
 
+# Apply publishConfig so Node resolves dist/ instead of src/ (no tsx in prod)
+RUN node -e "\
+  const fs=require('fs'),{join}=require('path');\
+  const dirs=['packages/tentickle','packages/agent','packages/storage',\
+    'packages/memory','packages/tools','packages/cli','packages/tui',\
+    'agents/main','agents/coding'];\
+  for(const d of dirs){\
+    const f=join(d,'package.json');\
+    const p=JSON.parse(fs.readFileSync(f,'utf8'));\
+    if(p.publishConfig){Object.assign(p,p.publishConfig);delete p.publishConfig}\
+    fs.writeFileSync(f,JSON.stringify(p,null,2)+'\n')}"
+
 # Default: daemon foreground with WebSocket on 18789
 ENV NODE_ENV=production
 EXPOSE 18789
