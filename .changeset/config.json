@@ -4,7 +4,17 @@
   "commit": false,
   "fixed": [],
   "linked": [
-    ["tentickle", "@tentickle/agent", "@tentickle/cli", "@tentickle/coding", "@tentickle/main", "@tentickle/memory", "@tentickle/storage", "@tentickle/tools", "@tentickle/tui"]
+    [
+      "tentickle",
+      "@tentickle/agent",
+      "@tentickle/cli",
+      "@tentickle/coding",
+      "@tentickle/main",
+      "@tentickle/memory",
+      "@tentickle/storage",
+      "@tentickle/tools",
+      "@tentickle/tui"
+    ]
   ],
   "access": "public",
   "baseBranch": "master",
