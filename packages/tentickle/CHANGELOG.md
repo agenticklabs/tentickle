@@ -1,5 +1,17 @@
 # tentickle
 
+## 0.1.0
+
+### Patch Changes
+
+- Updated dependencies [176841b]
+  - @tentickle/agent@0.1.0
+  - @tentickle/cli@0.1.0
+  - @tentickle/coding@0.1.0
+  - @tentickle/main@0.1.0
+  - @tentickle/tools@0.1.0
+  - @tentickle/tui@0.1.0
+
 ## 0.0.3
 
 ### Patch Changes
@@ -16,6 +28,7 @@
 ### Patch Changes
 
 - Extract shared agent base, add main agent, verification gates
+
   - New `@tentickle/agent` package: shared `<TentickleAgent>` base component with identity, memory, grounding, entities, user profiles, rules, skills, settings, timeline compaction, and tool factories.
   - New `@tentickle/main` agent: personal orchestration agent with entity awareness and human context.
   - `@tentickle/coding` slimmed to coding-specific behavior (system prompt, verification gate, conventions) on the shared base.

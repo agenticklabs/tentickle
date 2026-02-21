@@ -1,6 +1,6 @@
 {
   "name": "@tentickle/main",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Main agent — orchestration, judgment, context maintenance",
   "license": "MIT",
   "author": "Ryan Lindgren",
