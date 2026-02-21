@@ -1,6 +1,6 @@
 {
   "name": "@tentickle/memory",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Cross-session semantic memory — FTS5 + optional vector search",
   "license": "MIT",
   "author": "Ryan Lindgren",

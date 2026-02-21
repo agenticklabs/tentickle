@@ -1,6 +1,6 @@
 {
   "name": "@tentickle/tui",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Shared TUI components for tentickle agents",
   "license": "MIT",
   "author": "Ryan Lindgren",

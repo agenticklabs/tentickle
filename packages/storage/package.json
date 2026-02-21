@@ -1,6 +1,6 @@
 {
   "name": "@tentickle/storage",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Session persistence — SQLite storage with schema versioning",
   "license": "MIT",
   "author": "Ryan Lindgren",
