@@ -1,20 +1,10 @@
-import {
-  Timeline,
-  Message as MessageComponent,
-  useOnMount,
-  useOnTickStart,
-  useState,
-} from "@agentick/core";
-import type { COMTimelineEntry } from "@agentick/core";
-import { extractText, isMediaBlock, type Message } from "@agentick/shared";
+import { Timeline, Message as MessageComponent, useContextInfo } from "@agentick/core";
+import type { COMTimelineEntry, CompactionStrategy } from "@agentick/core";
+import type { Message } from "@agentick/shared";
+import { extractText, isMediaBlock } from "@agentick/shared";
 
 const TEXT_THRESHOLD = 280;
 const EDGE_LENGTH = 140;
-
-function isOld(msg: Message, threshold: number | null): boolean {
-  if (!threshold || !msg.createdAt) return false;
-  return new Date(msg.createdAt).getTime() < threshold;
-}
 
 export function truncateEdges(text: string): string {
   if (text.length <= TEXT_THRESHOLD) return text;
@@ -57,73 +47,47 @@ export function toolResultSummary(msg: Message): string {
   return parts.join("\n") || "[tool result]";
 }
 
+// ---------------------------------------------------------------------------
+// EnhancedTimeline — KV-cache-safe, budget-aware
+// ---------------------------------------------------------------------------
+
+export interface EnhancedTimelineProps {
+  /** Explicit token budget. Omit to auto-derive from model context window. */
+  maxTokens?: number;
+  /** Compaction strategy. Default: sliding-window. */
+  strategy?: CompactionStrategy;
+  /** Reserved headroom tokens. Default: 8192. */
+  headroom?: number;
+}
+
 /**
- * Enhanced timeline: current execution full-fidelity, past compacted.
+ * Timeline with automatic token budget management.
  *
- * Historical tool results get collapsed summaries. Historical user messages
- * with multimodal content get text-only summaries. Assistant messages are
- * never modified (ICL corruption risk). All collapsed messages get
- * expandable ref names.
+ * KV cache safety: messages are NEVER modified between ticks. Instead,
+ * TokenBudget evicts old entries entirely — the remaining entries are
+ * verbatim, preserving the prefix cache across ticks.
+ *
+ * Budget: derived from `useContextInfo().contextWindow` if not explicitly
+ * set. The `headroom` prop is the sole safety margin — no additional
+ * multiplier. Uses sliding-window strategy that preserves system and user
+ * messages while evicting old assistant/tool entries.
  */
-export function EnhancedTimeline() {
-  const [executionStartedAt, setExecutionStartedAt] = useState<number | null>(null);
+export function EnhancedTimeline({ maxTokens, strategy, headroom }: EnhancedTimelineProps = {}) {
+  const contextInfo = useContextInfo();
 
-  useOnMount(() => {
-    setExecutionStartedAt(Date.now());
-  });
-
-  useOnTickStart((tickState) => {
-    if (tickState.tick === 1) {
-      setExecutionStartedAt(Date.now());
-    }
-  });
+  // Derive budget from model's actual context window when not explicit.
+  // headroom is the sole safety margin — no multiplier.
+  const effectiveMaxTokens = maxTokens ?? contextInfo?.contextWindow ?? undefined;
 
   return (
-    <Timeline>
+    <Timeline
+      maxTokens={effectiveMaxTokens}
+      strategy={strategy ?? "sliding-window"}
+      headroom={headroom ?? 8192}
+      preserveRoles={["system", "user"]}
+    >
       {(entries: COMTimelineEntry[], pending = []) => [
-        ...entries.map((entry, index) => {
-          const msg = entry.message;
-
-          // Current execution: full fidelity
-          if (!isOld(msg, executionStartedAt)) {
-            return <MessageComponent key={entry.id} {...msg} />;
-          }
-
-          // Historical: role-specific collapse strategy
-          switch (msg.role) {
-            // Assistant: never modify — ICL corruption risk
-            case "assistant":
-              return <MessageComponent key={entry.id} {...msg} />;
-
-            // Tool results: collapse with content summary (not drop)
-            case "tool":
-              return (
-                <MessageComponent
-                  key={entry.id}
-                  {...msg}
-                  collapsed={toolResultSummary(msg)}
-                  collapsedName={`ref:${index}`}
-                />
-              );
-
-            // User: only collapse if multimodal content present
-            case "user":
-              if (hasMultimodal(msg)) {
-                return (
-                  <MessageComponent
-                    key={entry.id}
-                    {...msg}
-                    collapsed={userMultimodalSummary(msg)}
-                    collapsedName={`ref:${index}`}
-                  />
-                );
-              }
-              return <MessageComponent key={entry.id} {...msg} />;
-
-            default:
-              return <MessageComponent key={entry.id} {...msg} />;
-          }
-        }),
+        ...entries.map((entry) => <MessageComponent key={entry.id} {...entry.message} />),
         ...pending.map((incomingMsg, i) => {
           const msg = incomingMsg.content as Message;
           return <MessageComponent key={msg.id || `pending-${i}`} {...msg} />;

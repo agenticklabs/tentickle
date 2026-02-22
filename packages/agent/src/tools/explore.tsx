@@ -13,10 +13,18 @@ import { z } from "zod";
 export function createExploreTool(Agent: ComponentFunction): ToolClass {
   return createTool({
     name: "explore",
-    description:
-      "Spawn a sub-agent for exploratory tasks. The sub-agent has full workspace access " +
-      "and can itself spawn further sub-agents. Use for open-ended research, " +
-      "codebase understanding, or discovering solutions.",
+    description: `Spawn a sub-agent for open-ended exploration and research.
+
+When to use:
+- Understanding an unfamiliar module or subsystem
+- Mapping dependencies and call chains
+- Finding patterns or conventions across the codebase
+- Researching how an existing feature works before modifying it
+
+The explore agent has full workspace access and can spawn its own sub-agents.
+Use this instead of doing broad exploration in your main context — it keeps
+your context clean and focused while the explorer does the deep dive.
+Results are reported back as a summary you can act on.`,
     displaySummary: (input) => input.topic.slice(0, 60),
     input: z.object({
       topic: z.string().describe("What the sub-agent should explore or research"),

@@ -15,11 +15,17 @@ import { z } from "zod";
 export function createSpawnTool(Agent: ComponentFunction): ToolClass {
   return createTool({
     name: "spawn",
-    description:
-      "Delegate a task to a sub-agent that runs independently with full workspace " +
-      "access, then reports back with results. Use for research, exploration, " +
-      "refactoring sub-tasks, or any work that can proceed in parallel. " +
-      "Call multiple times for concurrent delegations.",
+    description: `Delegate a task to a sub-agent that runs independently with full workspace access.
+
+When to use:
+- Writing tests while you implement the feature (parallel)
+- Refactoring a subsystem while you work on another
+- Running verification (typecheck, tests) while you continue editing
+- Any independent sub-task that doesn't need your direct supervision
+
+The sub-agent has ALL your tools including spawn. It reports back with results.
+Call spawn multiple times in ONE response for concurrent delegations — they run in parallel.
+Provide clear, specific prompts with enough context for the sub-agent to succeed autonomously.`,
     displaySummary: (input) => input.topic.slice(0, 60),
     input: z.object({
       topic: z.string().describe("What the sub-agent should accomplish"),

@@ -4,7 +4,7 @@ import { Knobs } from "@agentick/core";
 import { Sandbox, SandboxTools } from "@agentick/sandbox";
 import { localProvider } from "@agentick/sandbox-local";
 import type { SandboxProvider, Mount, Permissions, ResourceLimits } from "@agentick/sandbox";
-import { Glob, Grep } from "@tentickle/tools";
+import { Glob, Grep, WebFetch } from "@tentickle/tools";
 import { existsSync, mkdirSync } from "node:fs";
 
 import { Identity } from "./identity.js";
@@ -13,6 +13,7 @@ import { WorkspaceGrounding, ProjectConventions } from "./grounding.js";
 import { Memory, ClaudeMemory } from "./memory.js";
 import { Skills } from "./skills.js";
 import { EnhancedTimeline } from "./timeline.js";
+import { ErrorRecovery } from "./error-recovery.js";
 import { TaskStore, bindTaskStore } from "./task-store.js";
 import { createTaskTool } from "./tools/task-list.js";
 import { createRememberTool, createRecallTool, getMemory } from "@tentickle/memory";
@@ -165,9 +166,12 @@ export function TentickleAgent({
 
         <EnhancedTimeline />
 
+        <ErrorRecovery />
+
         <SandboxTools />
         <Glob />
         <Grep />
+        <WebFetch />
         <TaskTool />
         <AddDirCommand />
         {RememberTool && <RememberTool />}

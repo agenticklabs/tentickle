@@ -93,8 +93,18 @@ async function searchDir(
 
 export const Grep: ToolClass = createTool({
   name: "grep",
-  description:
-    "Search file contents for a regex pattern. Returns matching lines with file paths and line numbers. Skips binary files, node_modules, and dotfiles.",
+  description: `Search file contents for a regex pattern.
+
+When to use:
+- Finding where a function, class, or variable is defined or used
+- Searching for error messages, string literals, or config keys
+- Tracing imports and dependencies across the codebase
+
+Output: matching lines as \`file:line: content\` (max 100 matches).
+Skips binary files, node_modules, and dotfiles.
+Use \`include\` to narrow by file type (e.g. \`**/*.ts\`).
+Use \`caseSensitive: false\` for case-insensitive search.
+If you get 100 matches, narrow with \`include\` or a more specific pattern.`,
   displaySummary: (input) => input.pattern,
   input: z.object({
     pattern: z.string().describe("Regex pattern to search for"),

@@ -42,8 +42,16 @@ async function walkAndMatch(
 
 export const Glob: ToolClass = createTool({
   name: "glob",
-  description:
-    "Find files matching a glob pattern. Use ** for recursive matching, * for single-level. Skips node_modules and dotfiles.",
+  description: `Find files matching a glob pattern relative to the workspace.
+
+When to use:
+- Understanding project structure: \`**/*.ts\`, \`src/**/*.tsx\`
+- Finding specific config files: \`**/tsconfig.json\`, \`**/*.test.ts\`
+- Narrowing scope before grep — glob first to understand layout, then grep for content
+
+Output: file paths (max 200), sorted alphabetically.
+Skips node_modules and dotfiles automatically.
+If you get 200 results, narrow your pattern or use the \`path\` param to target a subdirectory.`,
   displaySummary: (input) => input.pattern,
   input: z.object({
     pattern: z.string().describe('Glob pattern (e.g. "**/*.ts", "src/**/*.tsx")'),

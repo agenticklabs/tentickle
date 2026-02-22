@@ -5,7 +5,6 @@
 ### Minor Changes
 
 - 176841b: feat: daemon mode, package extraction, session persistence
-
   - Extract `@tentickle/tui` and `@tentickle/cli` from agents
   - Extract `@tentickle/storage` and `@tentickle/memory` from agent
   - Daemon mode: background gateway with Unix socket TUI connection
