@@ -1,7 +1,36 @@
 import { createTool } from "@agentick/core";
-import type { App, ToolClass } from "@agentick/core";
+import type { App, Session, ToolClass } from "@agentick/core";
 import type { TentickleSessionStore } from "@tentickle/storage";
 import { z } from "zod";
+
+// ---------------------------------------------------------------------------
+// Confirmation routing — pipe confirmations between independent sessions
+// ---------------------------------------------------------------------------
+
+function pipeConfirmations(from: Session, to: Session): () => void {
+  const childCallIds = new Set<string>();
+
+  const onEvent = (event: any) => {
+    if (event.type === "tool_confirmation_required") {
+      childCallIds.add(event.callId);
+      to.pushEvent(event);
+    }
+  };
+  from.on("event", onEvent);
+
+  const unsubChannel = to.channel("tool_confirmation").subscribe((event: any) => {
+    if (event.type === "response" && event.id && childCallIds.has(event.id)) {
+      from.channel("tool_confirmation").publish(event);
+      childCallIds.delete(event.id);
+    }
+  });
+
+  return () => {
+    from.removeListener("event", onEvent);
+    unsubChannel();
+    childCallIds.clear();
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Dispatch mode — fire-and-forget autonomous delegation
@@ -15,6 +44,10 @@ async function handleDispatch(
   spec: string,
 ): Promise<{ sessionId: string }> {
   const session = await app.session();
+  const ownerSession = await app.session(ownerSessionId);
+
+  // Route tool confirmations from delegate → owner TUI → delegate
+  const unpipe = pipeConfirmations(session, ownerSession);
 
   store.initSession(session.id, {
     parentSessionId: ownerSessionId,
@@ -31,6 +64,7 @@ async function handleDispatch(
   // Background: await completion, notify parent, update status
   handle.result.then(
     (result) => {
+      unpipe();
       store.updateSessionMeta(session.id, { status: "completed" });
       store.setSnapshotValue(session.id, "result", result.response.slice(0, 2000));
       app
@@ -53,6 +87,7 @@ async function handleDispatch(
         });
     },
     (error) => {
+      unpipe();
       store.updateSessionMeta(session.id, { status: "failed" });
       const msg = error instanceof Error ? error.message : String(error);
       store.setSnapshotValue(session.id, "error", msg);
@@ -94,6 +129,11 @@ async function handleSupervised(
 ): Promise<{ delegateSessionId: string; supervisorSessionId: string }> {
   const delegateSession = await app.session();
   const supervisorSession = await app.session();
+  const ownerSession = await app.session(ownerSessionId);
+
+  // Route tool confirmations from both sessions → owner TUI → back
+  const unpipeDelegate = pipeConfirmations(delegateSession, ownerSession);
+  const unpipeSupervisor = pipeConfirmations(supervisorSession, ownerSession);
 
   // Supervisor is child of owner
   store.initSession(supervisorSession.id, {
@@ -145,6 +185,8 @@ async function handleSupervised(
   // Background: await supervisor completion, notify parent
   handle.result.then(
     (result) => {
+      unpipeDelegate();
+      unpipeSupervisor();
       // Supervisor calls complete_delegation which updates status,
       // but if it ends without calling it, mark completed anyway
       const meta = store.getSessionMeta(supervisorSession.id);
@@ -173,6 +215,8 @@ async function handleSupervised(
         });
     },
     (error) => {
+      unpipeDelegate();
+      unpipeSupervisor();
       const msg = error instanceof Error ? error.message : String(error);
       store.updateSessionMeta(supervisorSession.id, { status: "failed" });
       store.setSnapshotValue(supervisorSession.id, "error", msg);
