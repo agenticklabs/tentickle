@@ -1,9 +1,14 @@
-import type { App, AppOptions, ComponentFunction } from "@agentick/core";
+import type { App, AppOptions, ComponentFunction, InboxMessageInput } from "@agentick/core";
 import type { EmbeddingModel } from "@agentick/core/model";
 import type { StreamEvent, EntryCommittedEvent } from "@agentick/shared";
 import { createApp } from "@agentick/core";
 import { huggingfaceEmbedding } from "@agentick/huggingface";
-import { openDatabase, ensureStorageSchema, TentickleSessionStore } from "@tentickle/storage";
+import {
+  openDatabase,
+  ensureStorageSchema,
+  TentickleSessionStore,
+  bindSessionStore,
+} from "@tentickle/storage";
 import { ensureMemorySchema, TentickleMemory } from "@tentickle/memory";
 import { getDbPath } from "./paths.js";
 
@@ -73,6 +78,7 @@ export async function createTentickleApp<P extends Record<string, unknown>>(
   ensureMemorySchema(db);
   const store = new TentickleSessionStore(db);
   const memory = TentickleMemory.create(db);
+  bindSessionStore(store);
 
   // Enable semantic search unless explicitly disabled
   if (options.embedding !== false) {
@@ -83,9 +89,21 @@ export async function createTentickleApp<P extends Record<string, unknown>>(
     });
   }
 
+  // Route delegation notifications to their parent session
+  const userResolver = options.sessionResolver;
+  const sessionResolver = (message: InboxMessageInput): string | null | Promise<string | null> => {
+    if (message.source.startsWith("session:")) {
+      const childId = message.source.slice(8);
+      const meta = store.getSessionMeta(childId);
+      if (meta?.parent_session_id) return meta.parent_session_id;
+    }
+    return userResolver ? userResolver(message) : null;
+  };
+
   const app = createApp<P>(Agent, {
     ...options,
     sessions: { ...options.sessions, store },
+    sessionResolver,
     onEvent: (event) => {
       try {
         wireStorePersistence(store, event);
@@ -97,4 +115,18 @@ export async function createTentickleApp<P extends Record<string, unknown>>(
   });
 
   return { app, store, memory };
+}
+
+// ---------------------------------------------------------------------------
+// Global app binding (for tools that need app reference)
+// ---------------------------------------------------------------------------
+
+let _app: App | null = null;
+
+export function bindApp(app: App): void {
+  _app = app;
+}
+
+export function getApp(): App | null {
+  return _app;
 }

@@ -48,4 +48,30 @@ export function ensureStorageSchema(db: DatabaseSync): void {
       throw e;
     }
   }
+  if (current < 2) {
+    // Migration 002 recreates the sessions table (DROP + RENAME).
+    // PRAGMA foreign_keys must be OFF to prevent cascade-deletes on DROP.
+    // PRAGMA foreign_keys is a no-op inside transactions, so we disable
+    // it before BEGIN and re-enable after COMMIT.
+    db.exec("PRAGMA foreign_keys = OFF");
+    const sql = readMigration("002_delegation_types.sql");
+    db.exec("BEGIN");
+    try {
+      db.exec(sql);
+      setSchemaVersion(db, "storage", 2);
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    } finally {
+      db.exec("PRAGMA foreign_keys = ON");
+    }
+    // Verify no FK violations were introduced
+    const violations = db.prepare("PRAGMA foreign_key_check").all();
+    if (violations.length > 0) {
+      throw new Error(
+        `Migration 002 introduced FK violations: ${JSON.stringify(violations.slice(0, 5))}`,
+      );
+    }
+  }
 }

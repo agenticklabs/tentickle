@@ -55,10 +55,10 @@ describe("ensureStorageSchema", () => {
     db.close();
   });
 
-  it("sets storage version to 1 in _schema_versions", () => {
+  it("sets storage version to 2 in _schema_versions", () => {
     const db = freshDb();
     ensureStorageSchema(db);
-    expect(getSchemaVersion(db, "storage")).toBe(1);
+    expect(getSchemaVersion(db, "storage")).toBe(2);
     db.close();
   });
 
@@ -66,7 +66,7 @@ describe("ensureStorageSchema", () => {
     const db = freshDb();
     ensureStorageSchema(db);
     ensureStorageSchema(db);
-    expect(getSchemaVersion(db, "storage")).toBe(1);
+    expect(getSchemaVersion(db, "storage")).toBe(2);
     db.close();
   });
 
@@ -224,7 +224,7 @@ describe("ensureStorageSchema", () => {
       1,
     );
 
-    expect(getSchemaVersion(db, "storage")).toBe(1);
+    expect(getSchemaVersion(db, "storage")).toBe(2);
     expect(getSchemaVersion(db, "memory")).toBe(1);
     db.close();
   });

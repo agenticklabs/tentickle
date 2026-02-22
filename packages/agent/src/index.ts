@@ -9,6 +9,8 @@ export { WorkspaceGrounding, ProjectConventions } from "./grounding.js";
 export { Memory, ClaudeMemory } from "./memory.js";
 export { Skills } from "./skills.js";
 export { EnhancedTimeline } from "./timeline.js";
+export type { EnhancedTimelineProps } from "./timeline.js";
+export { ErrorRecovery } from "./error-recovery.js";
 export { UserContext } from "./user-context.js";
 export { EntityAwareness } from "./entities.js";
 export { Rules } from "./rules.js";
@@ -23,10 +25,32 @@ export {
 export { TaskStore, bindTaskStore, getTaskStore } from "./task-store.js";
 export type { Task } from "./task-store.js";
 
+// Delegation context
+export {
+  getDelegationMetadata,
+  getDelegationMetadataFromStore,
+  DelegateContext,
+  SupervisorContext,
+} from "./delegation-context.js";
+export type { DelegationMetadata, DelegationRole } from "./delegation-context.js";
+
+// Delegation components
+export { ActiveJobs } from "./components/active-jobs.js";
+
 // Tool factories (consumer creates their own instances)
 export { createTaskTool } from "./tools/task-list.js";
 export { createSpawnTool } from "./tools/spawn.js";
 export { createExploreTool } from "./tools/explore.js";
+export { createDelegateTool } from "./tools/delegate.js";
+export { createInspectJobTool } from "./tools/inspect-job.js";
+export { createApproveJobTool, createCancelJobTool } from "./tools/job-control.js";
+export {
+  createSendToDelegateTool,
+  createInspectDelegateTool,
+  createCompleteDelegationTool,
+  createEscalateTool,
+  createRunVerificationTool,
+} from "./tools/supervisor-tools.js";
 export { AddDirCommand } from "./tools/add-dir.js";
 
 // Path helpers
@@ -47,7 +71,7 @@ export {
 } from "./paths.js";
 
 // App factory
-export { createTentickleApp } from "./app.js";
+export { createTentickleApp, bindApp, getApp } from "./app.js";
 export type { TentickleAppOptions, TentickleAppResult } from "./app.js";
 
 // Storage (re-export from @tentickle/storage)
@@ -58,7 +82,7 @@ export {
   bindSessionStore,
   getSessionStore,
 } from "@tentickle/storage";
-export type { OpenDatabaseOptions } from "@tentickle/storage";
+export type { OpenDatabaseOptions, SessionRow } from "@tentickle/storage";
 
 // Memory (re-export from @tentickle/memory)
 export {

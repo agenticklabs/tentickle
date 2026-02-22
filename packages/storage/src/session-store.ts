@@ -57,6 +57,148 @@ export class TentickleSessionStore implements SessionStore {
   }
 
   // ==========================================================================
+  // Delegation — session lifecycle + KV metadata
+  // ==========================================================================
+
+  /**
+   * Create or upgrade a session row with full delegation columns.
+   * Handles the race where the framework's save() creates a minimal 'chat' row
+   * before initSession runs — in that case the upsert upgrades it.
+   * Throws if the session already has non-chat metadata (prevents accidental overwrites).
+   */
+  initSession(
+    id: string,
+    meta: {
+      parentSessionId?: string;
+      sessionType?: string;
+      title?: string;
+      status?: string;
+      workspace?: string;
+    },
+  ): void {
+    const existing = this.getSessionMeta(id);
+    if (existing && existing.session_type !== "chat") {
+      throw new Error(
+        `Session ${id} already initialized as '${existing.session_type}' — cannot reinitialize`,
+      );
+    }
+
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO sessions (id, parent_session_id, session_type, title, status, workspace, tick, version, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, '1.0', ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           parent_session_id = excluded.parent_session_id,
+           session_type = excluded.session_type,
+           title = excluded.title,
+           status = excluded.status,
+           workspace = excluded.workspace,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        id,
+        meta.parentSessionId ?? null,
+        meta.sessionType ?? "chat",
+        meta.title ?? null,
+        meta.status ?? "active",
+        meta.workspace ?? null,
+        now,
+        now,
+      );
+  }
+
+  /** Update mutable session metadata (status, title). */
+  updateSessionMeta(id: string, updates: Partial<{ status: string; title: string }>): void {
+    const sets: string[] = [];
+    const values: (string | number)[] = [];
+    if (updates.status !== undefined) {
+      sets.push("status = ?");
+      values.push(updates.status);
+    }
+    if (updates.title !== undefined) {
+      sets.push("title = ?");
+      values.push(updates.title);
+    }
+    if (sets.length === 0) return;
+    sets.push("updated_at = ?");
+    values.push(Date.now());
+    values.push(id);
+    this.db.prepare(`UPDATE sessions SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+  }
+
+  /** Read full session row. */
+  getSessionMeta(id: string): SessionRow | null {
+    return row<SessionRow>(this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id)) ?? null;
+  }
+
+  /** All direct children of a session. */
+  getChildSessions(parentId: string): SessionRow[] {
+    return rows<SessionRow>(
+      this.db.prepare("SELECT * FROM sessions WHERE parent_session_id = ?").all(parentId),
+    );
+  }
+
+  /** Active delegation/supervision children of a session. */
+  getActiveDelegations(parentId: string): SessionRow[] {
+    return rows<SessionRow>(
+      this.db
+        .prepare(
+          `SELECT * FROM sessions
+           WHERE parent_session_id = ?
+             AND session_type IN ('delegation', 'supervision')
+             AND status = 'active'`,
+        )
+        .all(parentId),
+    );
+  }
+
+  /** Aggregate tick count and tool call count for a session (from executions/ticks). */
+  getSessionStats(sessionId: string): { tickCount: number; toolCallCount: number } {
+    const tickRow = row<{ count: number }>(
+      this.db
+        .prepare(
+          `SELECT COUNT(*) as count FROM ticks t
+           JOIN executions e ON t.execution_id = e.id
+           WHERE e.session_id = ?`,
+        )
+        .get(sessionId),
+    );
+    const toolRow = row<{ count: number }>(
+      this.db
+        .prepare(
+          `SELECT COUNT(*) as count FROM messages m
+           WHERE m.session_id = ? AND m.role = 'tool'`,
+        )
+        .get(sessionId),
+    );
+    return {
+      tickCount: tickRow?.count ?? 0,
+      toolCallCount: toolRow?.count ?? 0,
+    };
+  }
+
+  /** Read a single KV value from session_snapshots. */
+  getSnapshotValue(sessionId: string, key: string): string | null {
+    const r = row<SessionSnapshotRow>(
+      this.db
+        .prepare("SELECT value FROM session_snapshots WHERE session_id = ? AND key = ?")
+        .get(sessionId, key),
+    );
+    return r?.value ?? null;
+  }
+
+  /** Write a single KV value to session_snapshots. */
+  setSnapshotValue(sessionId: string, key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO session_snapshots (session_id, key, value, updated_at)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(sessionId, key, value, Date.now());
+  }
+
+  // ==========================================================================
   // Incremental persistence methods (called from onEvent)
   // ==========================================================================
 
