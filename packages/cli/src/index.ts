@@ -72,6 +72,7 @@ export function run(argv = process.argv): void {
     .option("--no-devtools", "disable devtools server")
     .option("--port <n>", "WebSocket port (enables network access)")
     .option("--host <addr>", "bind address (default: 0.0.0.0)")
+    .option("--config <path>", "path to config file (default: ./agentick.config.json)")
     .option("--log-file <path>", "daemon log file (default: ~/.tentickle/daemon.log)")
     .option("--daemon-child", "internal: marks this process as the forked daemon child")
     .action(async (opts) => {
@@ -84,6 +85,7 @@ export function run(argv = process.argv): void {
             ...opts,
             maxTicks: parseInt(opts.maxTicks, 10),
             port: opts.port ? parseInt(opts.port, 10) : undefined,
+            configPath: opts.config,
           },
           AGENTS,
         );
@@ -99,6 +101,7 @@ export function run(argv = process.argv): void {
           logFile: opts.logFile,
           port: opts.port ? parseInt(opts.port, 10) : undefined,
           host: opts.host,
+          configPath: opts.config,
         },
         AGENTS,
       );

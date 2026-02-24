@@ -2,9 +2,38 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } fr
 import { join, dirname } from "node:path";
 import { execSync } from "node:child_process";
 import { getDataDir } from "./paths.js";
+import { getConfigOrNull } from "@agentick/gateway";
 
 // ---------------------------------------------------------------------------
-// Schema
+// Gateway Config Augmentation
+// ---------------------------------------------------------------------------
+
+declare module "@agentick/gateway" {
+  interface FileConfig {
+    agent?: AgentConfig;
+  }
+}
+
+export interface AgentConfig {
+  /** Which agent to use ("main" | "coding" | etc.) */
+  defaultAgent?: string;
+  /** Model provider ("openai" | "google" | "apple") */
+  provider?: string;
+  /** Model name within the provider (e.g. "gpt-4o", "gemini-2.5-flash") */
+  model?: string;
+  /** Provider-specific endpoint override */
+  baseUrl?: string;
+  /** Maximum model calls per execution */
+  maxTicks?: number;
+}
+
+/** Get agent config from the gateway config store (if bound) */
+export function getAgentConfig(): AgentConfig | undefined {
+  return getConfigOrNull()?.get("agent");
+}
+
+// ---------------------------------------------------------------------------
+// Legacy Settings (layered JSON files)
 // ---------------------------------------------------------------------------
 
 export interface TentickleSettings {

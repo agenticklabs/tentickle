@@ -44,6 +44,7 @@ export interface DaemonOptions {
   logFile?: string;
   port?: number;
   host?: string;
+  configPath?: string;
 }
 
 export interface DaemonStatus {
@@ -90,14 +91,27 @@ export async function runDaemonProcess(
   opts: DaemonOptions,
   appFactories: Record<string, () => Promise<(o: any) => Promise<any>>>,
 ): Promise<void> {
-  const { createGateway } = await import("@agentick/gateway");
+  const { createGateway, loadConfig, bindConfig } = await import("@agentick/gateway");
   const { bindSessionStore, bindMemory } = await import("@tentickle/agent");
   const { CronService, bindSchedulerStore } = await import("@agentick/scheduler");
   const { createClient } = await import("@agentick/client");
   const { TelegramPlugin } = await import("@agentick/connector-telegram");
 
-  const defaultAgent = opts.agent ?? "main";
-  const maxTicks = opts.maxTicks ?? 250;
+  // Load config file → interpolate env/secrets → validate
+  const configStore = await loadConfig({
+    path: opts.configPath,
+    overrides: {
+      gateway: {
+        ...(opts.port && { port: opts.port }),
+        ...(opts.host && { host: opts.host }),
+      },
+    },
+  });
+  bindConfig(configStore);
+
+  const agentConfig = configStore.get("agent");
+  const defaultAgent = opts.agent ?? agentConfig?.defaultAgent ?? "main";
+  const maxTicks = opts.maxTicks ?? agentConfig?.maxTicks ?? 250;
   const devTools = opts.devTools ?? false;
 
   if (devTools) {
@@ -119,14 +133,21 @@ export async function runDaemonProcess(
     }
   }
 
-  // Build plugins
+  // Build plugins — config-driven with env var fallback
   const plugins: GatewayPlugin[] = [];
-  if (process.env.TELEGRAM_BOT_TOKEN) {
+  const telegramConfig = configStore.get("connectors")?.telegram;
+  const telegramToken = telegramConfig?.token ?? process.env.TELEGRAM_BOT_TOKEN;
+
+  if (telegramToken) {
     plugins.push(
       new TelegramPlugin({
-        token: process.env.TELEGRAM_BOT_TOKEN,
-        allowedUsers: process.env.TELEGRAM_ALLOWED_USERS?.split(",").map(Number).filter(Boolean),
-        chatId: process.env.TELEGRAM_CHAT_ID ? Number(process.env.TELEGRAM_CHAT_ID) : undefined,
+        token: telegramToken,
+        allowedUsers:
+          telegramConfig?.allowedUsers ??
+          process.env.TELEGRAM_ALLOWED_USERS?.split(",").map(Number).filter(Boolean),
+        chatId:
+          telegramConfig?.chatId ??
+          (process.env.TELEGRAM_CHAT_ID ? Number(process.env.TELEGRAM_CHAT_ID) : undefined),
       }),
     );
   }
@@ -137,6 +158,7 @@ export async function runDaemonProcess(
     defaultApp: defaultAgent,
     socketPath,
     plugins,
+    configStore,
     ...(opts.port && {
       port: opts.port,
       host: opts.host ?? "0.0.0.0",
@@ -226,6 +248,7 @@ function spawnBackground(socketPath: string, opts: DaemonOptions): void {
   if (opts.devTools) args.push("--devtools");
   if (opts.port) args.push("--port", String(opts.port));
   if (opts.host) args.push("--host", opts.host);
+  if (opts.configPath) args.push("--config", opts.configPath);
 
   // Open log file for stdout/stderr
   let logFd: number;

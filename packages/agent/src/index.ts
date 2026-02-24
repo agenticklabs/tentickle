@@ -113,8 +113,9 @@ export {
   writeGlobalSettings,
   writeProjectSettings,
   writeProjectLocalSettings,
+  getAgentConfig,
 } from "./settings.js";
-export type { TentickleSettings } from "./settings.js";
+export type { TentickleSettings, AgentConfig } from "./settings.js";
 
 // Connectors (shared env-var-based startup)
 export { startConnectors } from "./connectors.js";

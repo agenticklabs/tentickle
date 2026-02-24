@@ -41,6 +41,7 @@
     "@agentick/connector": "^0.9.0",
     "@agentick/connector-imessage": "^0.9.0",
     "@agentick/core": "^0.9.0",
+    "@agentick/gateway": "^0.9.0",
     "@agentick/google": "^0.9.0",
     "@agentick/huggingface": "^0.9.0",
     "@agentick/openai": "^0.9.0",
