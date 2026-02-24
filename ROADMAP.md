@@ -41,8 +41,9 @@ the biggest capability gains live.
 - [x] Confirmation policy — auto-approve memory writes, prompt otherwise
 - [x] SpawnIndicator — wired next to ToolCallIndicator
 - [x] Confirmation text input — Y/N/A shortcuts, text feedback on Enter
-- [ ] Streaming message display — token-by-token response, not "Thinking..."
-- [ ] Session persistence — save/resume conversations across restarts
+- [x] Session persistence — save/resume conversations across restarts
+- [-] Streaming message display — framework supports streaming, TUI renders
+  thinking indicator but not true token-by-token
 - [ ] Unified execution tree — compose tool + spawn indicators via originCallId
 
 ## Phase 4: Agent Intelligence (In Progress)
@@ -52,75 +53,51 @@ the biggest capability gains live.
 - [x] Sub-agent delegation — spawn tool for concurrent sub-tasks
 - [x] Explore tool — spawn sub-agent for open-ended research
 - [x] Knobs — expandable timeline, set_knob with name/group
+- [x] Delegation system — dispatch mode, supervised mode, follow-up messages
+- [x] Confirmation routing — pipes through delegation tree (71e4c32)
+- [x] Job management — sessions ARE jobs (2773e57), inspect/approve/cancel
+- [x] Session graph topology — collapsed 9 tools to 5 (3 graph ops + 1 query + 1 shell)
+- [ ] Delegation hardening — sandbox `run_verification` (bypasses sandbox today),
+      authorization boundary on `send_session` (any session ID accepted today),
+      ownership validation on `sessions` inspect/close, `requiresConfirmation` on
+      high-stakes tools, inbox message framing (role:"user" enables prompt injection)
 - [ ] Verification loops — auto-run tests/typecheck after edits
 - [ ] Error recovery — detect repeated failures, suggest alternatives
 - [ ] Task dependencies — blocking, parallel execution hints
 
+Session graph done — delegation collapsed from ~770 LOC (9 tools, 4 files) to
+~470 LOC (5 tools, 1 file). Roles still derived from metadata (not graph position)
+but the tool surface maps cleanly to graph operations.
+
 ## Phase 5: Memory & Persistent Storage
 
-Replace blob-per-session with normalized SQLite. Every session is a group chat.
-Messages, entities, and memories are queryable. Forkable sessions with timeline
-inheritance. Media pipeline for searchable attachments. Recall tools backed by
-FTS5 search and spawned retrieval agents.
+SQLite-backed memory and session persistence. Memory is a tentickle library
+built on `createTool` — not a framework feature. Session store uses the same
+SQLite database with forward-only migrations.
 
-Full schema: `plans/memory-storage-schema.md`
+### Done
 
-### Tier 1 — Foundation (enables everything else)
+- [x] TentickleMemory — SQLite + FTS5, createTool-based library
+- [x] remember/recall tools — append-only writes, time-decay ranking, RRF
+- [x] Namespace isolation — per-workspace or per-user
+- [x] Dedup — configurable cosine similarity threshold
+- [x] TentickleSessionStore — SQLite session metadata + snapshots
+- [x] Migration system — numbered SQL files, forward-only
+- [x] Delegation types — session_type column (delegation/supervision)
 
-- [ ] Migration system — numbered SQL files, `schema_migrations` table, checksum
-      verification, forward-only, transaction-per-migration. Initial schema = 001.
-- [ ] Normalized SQLite schema — sessions, participants, messages, content_blocks,
-      events, session_state. Replace JSON blob snapshots.
-- [ ] Media directory — `~/.tentickle/media/`, deduplicated by content hash.
-      Media table with provenance tracking.
-- [ ] Write path — new sessions write to normalized tables. Timeline assembled
-      from queries, not deserialized blobs.
-- [ ] Entity migration — move `~/.tentickle/entities/*.md` into `entities` table.
-      `EntityAwareness` reads from DB.
+### Next
 
-### Tier 2 — Recall tools
-
-- [ ] `recall(query)` — single-pass search. One spawned haiku agent searches
-      memories_fts + messages_fts + entities_fts. Returns curated summary.
-- [ ] `deep_recall(query)` — fan-out search. Partitions history by time/session,
-      spawns N haiku agents in parallel, merges results. Depth limit: 2.
-- [ ] `remember(topic, content, tags?)` — append-only memory log. Time-decayed
-      relevance. Lineage tracking for concept evolution.
-- [ ] Append-only memories — never update, only append. Time decay ranking.
-      Evolution queries ("what did we believe about X at time T?").
-
-### Tier 3 — Forkable sessions
-
-- [ ] `session_type = 'fork'` with `fork_after_message_id`
-- [ ] `WITH RECURSIVE` timeline assembly across fork chains
-- [ ] Fork UI in TUI — branch indicator, parent reference
-- [ ] Spawn sessions as children — `session_type = 'spawn'`, no timeline inheritance
-
-### Tier 4 — Knowledge graph
-
-- [ ] Entity extraction middleware — `tool.run` middleware on `remember` tool.
-      Fast structured-output call (haiku) extracts entities + relationships
-      from memory content. Synchronous, auditable, no background jobs.
-- [ ] `entity_relationships` table — typed edges with provenance and confidence.
-      Graph traversal via self-joins and `WITH RECURSIVE`.
-- [ ] Graph-aware recall — recall tools can traverse entity relationships to
-      find contextually relevant knowledge (2-hop max).
-
-### Tier 5 — Media pipeline
-
-- [ ] Ingest: hash, dedup, store, insert media row
-- [ ] Thumbnails: resize images for LLM ingestion (token optimization)
-- [ ] VLM descriptions: local vision model describes images/documents for
-      searchability via `media_fts`
-- [ ] Speech-to-text: transcribe audio/video for searchability
-- [ ] All async — doesn't block conversation
+- [ ] Recall agent — spawned haiku agent for multi-source search
+- [ ] Forkable sessions — fork_after_message_id, WITH RECURSIVE assembly
+- [ ] Entity extraction — memory middleware, structured-output
+- [ ] Media pipeline — ingest, thumbnails, VLM descriptions (async)
 
 ## Phase 6: Packaging & Distribution
 
 Ship `tentickle` as an installable CLI. Users should never need to clone agentick.
 
 - [x] `packages/tentickle/` — umbrella package, re-exports from `@tentickle/*`
-- [ ] CLI binary — `npx tentickle` launches TUI in cwd
+- [-] CLI binary — entry point exists, not polished
 - [ ] Argument parsing — `--model`, `--workspace`, `--verbose`
 - [ ] `tentickle init` — scaffold .env, project conventions
 - [ ] `tentickle doctor` — verify env, API keys, sandbox support
@@ -154,6 +131,39 @@ Extract patterns and build focused agents that compose with the coding agent.
 ## Ongoing: Framework Co-Development
 
 Every framework gap gets an entry in `AGENTS.md`. Fix upstream, don't work around.
+
+### Recently contributed upstream
+
+- Gateway protocol formalization (schema discovery, error codes, PROTOCOL.md)
+- Gateway configuration system (ConfigStore, schema registry, env/secret interpolation)
+- Gates (useGate — knob-backed continuation conditions)
+- Knobs provider pattern (3 rendering modes, group dispatch)
+- Expandable content blocks (collapsed/collapsedName/collapsedGroup)
+- Content block JSX components (Text, Image, Document, Audio, Video, Code, Json)
+- Session.pushEvent() — external event injection
+- Session.getToolDefinitions() — tool catalog with audience
+- Unix socket transport + shared factory pattern
+- Gateway plugin system (runtime use/remove, PluginContext)
+- Embedding support on adapters (openai, google, huggingface, apple)
+- @agentick/secrets — platform-native secret storage (Keychain, libsecret)
+- Audience + dispatch model (replaces commandOnly/dispatchCommand)
+- Spawn event bubbling (spawn_start/spawn_end, child event forwarding)
+- tool_result_start lifecycle event
+- Confirmation routing through spawn tree
+- useComState fix (EventEmitter subscription)
+- provider_request type guard fix
+- Streaming event type arrays (MODEL_EVENT_TYPES etc.)
+- mapChunk array return support
+
+### Upstream work needed
+
+- **user-audience → SlashCommand bridge** — `useUserTools()` hook in `@agentick/tui`
+  that auto-generates slash commands from user-audience tools. Proof case: `add-dir`.
+- **dispatch on all transports** — currently local-only. Needs gateway, WebSocket, HTTP.
+- **Dynamic command discovery** — stream available commands via CompiledEvent.
+- **Session graph as first-class** — `parentSessionId`, `notifyParent()`, `app.receive(id, msg)`
+  landed (d9f2cce). Remaining: `pipeConfirmations` as core utility (duplicates
+  spawn's confirmation routing), recursive `closeTree` for deep topologies.
 
 ### Plugin Architecture (Core Extensibility)
 
@@ -194,23 +204,20 @@ Full design: `../agentick/plans/session-store-plugin.md`
 (handler-bag+lifecycle), Sandbox Provider (factory), Middleware (AOP),
 Guardrails (middleware), Secret Store (service), Transport (infrastructure).
 
-### Recently contributed upstream
+### OAuth & Scopes (Gateway Auth)
 
-- Spawn event bubbling (spawn_start/spawn_end, child event forwarding)
-- tool_result_start lifecycle event
-- Confirmation routing through spawn tree
-- originCallId on SpawnStartEvent
-- Confirmation text input in default Chat
-- SpawnIndicator TUI component
-- ToolCallIndicator 3-state update
-- `audience` tool property (replaced `commandOnly`)
-- `dispatch` session method (replaced `dispatchCommand`)
-- `mapChunk` array return support (Grok streaming fix)
-- `<Tool>` handler Procedure wrapping (`tool-procedure.ts`)
+All primitives exist — zero framework changes needed.
 
-### Upstream work needed
+- [ ] `UserContext.scopes` — add `scopes?: string[]` to kernel's `UserContext`
+- [ ] OAuth gateway plugin — `authenticate()` validates token, returns user
+      with scopes from OAuth provider (Google, GitHub, etc.)
+- [ ] Scope guard factory — `createScopeGuard(required: string[])` using
+      `Context.get().user?.scopes`, same pattern as `createRoleGuardMiddleware`
+- [ ] Per-tool scope binding — `tool.run.use(scopeGuard)` at mount time,
+      e.g. `shell` requires `scope:exec`, `write_file` requires `scope:write`
+- [ ] Session-level scope propagation — gateway already passes `UserContext`
+      into `Context.create()` at `invokeMethod` (gateway.ts:1624). Sessions
+      created within that context inherit scopes automatically.
 
-- **user-audience → SlashCommand bridge** — `useUserTools()` hook in `@agentick/tui`
-  that auto-generates slash commands from user-audience tools. Proof case: `add-dir`.
-- **dispatch on all transports** — currently local-only. Needs gateway, WebSocket, HTTP.
-- **Dynamic command discovery** — stream available commands via CompiledEvent.
+Architecture: gateway plugin (boundary) → UserContext (threading) → guards
+(enforcement). No procedure middleware needed.
