@@ -3,7 +3,10 @@ import { Grounding, useOnMount } from "@agentick/core";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 /**
  * Workspace awareness — package.json name, scripts, git branch.
@@ -28,12 +31,12 @@ export function WorkspaceGrounding({ workspace }: { workspace: string }) {
     } catch {}
 
     try {
-      const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+      const { stdout } = await execFileAsync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
         cwd: workspace,
         encoding: "utf-8",
         timeout: 3000,
-      }).trim();
-      lines.push(`Git branch: ${branch}`);
+      });
+      lines.push(`Git branch: ${stdout.trim()}`);
     } catch {}
 
     setInfo(lines.join("\n"));
