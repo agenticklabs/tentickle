@@ -1,4 +1,4 @@
-import type { App, AppOptions, ComponentFunction, InboxMessageInput } from "@agentick/core";
+import type { App, AppOptions, ComponentFunction } from "@agentick/core";
 import type { EmbeddingModel } from "@agentick/core/model";
 import type { StreamEvent, EntryCommittedEvent } from "@agentick/shared";
 import { createApp } from "@agentick/core";
@@ -89,21 +89,9 @@ export async function createTentickleApp<P extends Record<string, unknown>>(
     });
   }
 
-  // Route delegation notifications to their parent session
-  const userResolver = options.sessionResolver;
-  const sessionResolver = (message: InboxMessageInput): string | null | Promise<string | null> => {
-    if (message.source.startsWith("session:")) {
-      const childId = message.source.slice(8);
-      const meta = store.getSessionMeta(childId);
-      if (meta?.parent_session_id) return meta.parent_session_id;
-    }
-    return userResolver ? userResolver(message) : null;
-  };
-
   const app = createApp<P>(Agent, {
     ...options,
     sessions: { ...options.sessions, store },
-    sessionResolver,
     onEvent: (event) => {
       try {
         wireStorePersistence(store, event);

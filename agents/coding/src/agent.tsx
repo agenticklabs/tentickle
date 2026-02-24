@@ -6,13 +6,9 @@ import {
   createSpawnTool,
   createExploreTool,
   createDelegateTool,
-  createInspectJobTool,
-  createApproveJobTool,
-  createCancelJobTool,
-  createSendToDelegateTool,
-  createInspectDelegateTool,
-  createCompleteDelegationTool,
-  createEscalateTool,
+  createSendSessionTool,
+  createNotifyParentTool,
+  createSessionsTool,
   createRunVerificationTool,
   getDelegationMetadata,
   DelegateContext,
@@ -101,17 +97,9 @@ function NormalMode({ workspace, sessionId }: { workspace: string; sessionId?: s
     () => (app && store && sessionId ? createDelegateTool(app, store, sessionId) : null),
     [app, store, sessionId],
   );
-  const InspectJobTool = useMemo(
-    () => (app && store ? createInspectJobTool(app, store) : null),
-    [app, store],
-  );
-  const ApproveJobTool = useMemo(
-    () => (app && store ? createApproveJobTool(app, store) : null),
-    [app, store],
-  );
-  const CancelJobTool = useMemo(
-    () => (app && store ? createCancelJobTool(app, store) : null),
-    [app, store],
+  const SessionsTool = useMemo(
+    () => (app && store && sessionId ? createSessionsTool(app, store, sessionId) : null),
+    [app, store, sessionId],
   );
 
   return (
@@ -119,9 +107,7 @@ function NormalMode({ workspace, sessionId }: { workspace: string; sessionId?: s
       <CodingBehavior workspace={workspace} memoryFile={memoryFile} />
       {ScheduleTool && <ScheduleTool />}
       {DelegateTool && <DelegateTool />}
-      {InspectJobTool && <InspectJobTool />}
-      {ApproveJobTool && <ApproveJobTool />}
-      {CancelJobTool && <CancelJobTool />}
+      {SessionsTool && <SessionsTool />}
       {store && sessionId && <ActiveJobs store={store} ownerSessionId={sessionId} />}
     </>
   );
@@ -142,19 +128,16 @@ function DelegateMode({
   const app = getApp();
   const store = getSessionStore();
 
-  const EscalateTool = useMemo(
-    () =>
-      app && store
-        ? createEscalateTool(app, store, delegation.parentSessionId, delegation.sessionId)
-        : null,
-    [app, store, delegation.parentSessionId, delegation.sessionId],
+  const NotifyParentTool = useMemo(
+    () => (app && store ? createNotifyParentTool(app, store, delegation.sessionId) : null),
+    [app, store, delegation.sessionId],
   );
 
   return (
     <>
       <DelegateContext delegation={delegation} />
       <CodingBehavior workspace={workspace} memoryFile={memoryFile} />
-      {EscalateTool && <EscalateTool />}
+      {NotifyParentTool && <NotifyParentTool />}
     </>
   );
 }
@@ -171,30 +154,14 @@ function SupervisorMode({
   const app = getApp();
   const store = getSessionStore();
 
-  const SendTool = useMemo(
-    () =>
-      app && delegation.delegateSessionId
-        ? createSendToDelegateTool(app, delegation.delegateSessionId)
-        : null,
-    [app, delegation.delegateSessionId],
-  );
-  const InspectTool = useMemo(
-    () =>
-      app && delegation.delegateSessionId
-        ? createInspectDelegateTool(app, delegation.delegateSessionId)
-        : null,
-    [app, delegation.delegateSessionId],
-  );
-  const CompleteTool = useMemo(
-    () => (app && store ? createCompleteDelegationTool(app, store, delegation.sessionId) : null),
+  const SendTool = useMemo(() => (app ? createSendSessionTool(app) : null), [app]);
+  const NotifyTool = useMemo(
+    () => (app && store ? createNotifyParentTool(app, store, delegation.sessionId) : null),
     [app, store, delegation.sessionId],
   );
-  const EscalateTool = useMemo(
-    () =>
-      app && store
-        ? createEscalateTool(app, store, delegation.parentSessionId, delegation.sessionId)
-        : null,
-    [app, store, delegation.parentSessionId, delegation.sessionId],
+  const SessionsTool = useMemo(
+    () => (app && store ? createSessionsTool(app, store, delegation.sessionId) : null),
+    [app, store, delegation.sessionId],
   );
   const VerifyTool = useMemo(() => createRunVerificationTool(), []);
 
@@ -202,9 +169,8 @@ function SupervisorMode({
     <>
       <SupervisorContext delegation={delegation} />
       {SendTool && <SendTool />}
-      {InspectTool && <InspectTool />}
-      {CompleteTool && <CompleteTool />}
-      {EscalateTool && <EscalateTool />}
+      {NotifyTool && <NotifyTool />}
+      {SessionsTool && <SessionsTool />}
       <VerifyTool />
     </>
   );

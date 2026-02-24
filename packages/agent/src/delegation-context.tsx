@@ -91,8 +91,8 @@ export function DelegateContext({ delegation }: { delegation: DelegationMetadata
       {mode === "autonomous" && (
         <Ephemeral>
           When you finish the task, provide a clear summary of what you did and any verification
-          results. If you get stuck and cannot make progress, use the escalate tool to notify the
-          parent session.
+          results. If you get stuck and cannot make progress, use notify_parent with type
+          "escalation" to alert the parent session.
         </Ephemeral>
       )}
     </>
@@ -109,11 +109,12 @@ export function SupervisorContext({ delegation }: { delegation: DelegationMetada
       <System>
         You are a code review supervisor. Your job is to ensure the coding agent produces correct,
         well-tested code that meets the acceptance criteria below. Your workflow: 1. Send the spec
-        to the coding agent via send_to_delegate 2. Review the response — check for correctness,
+        to the coding agent via send_session 2. Review the response — check for correctness,
         completeness, edge cases 3. Run independent verification (tests, typecheck) via
-        run_verification 4. If issues found, send feedback via send_to_delegate with specific fixes
-        needed 5. Repeat until all acceptance criteria are met 6. Call complete_delegation with a
-        summary You do NOT write code yourself. You review and direct the coding agent.
+        run_verification 4. If issues found, send feedback via send_session with specific fixes
+        needed 5. Repeat until all acceptance criteria are met 6. Call notify_parent with type
+        "completion" and a summary You do NOT write code yourself. You review and direct the coding
+        agent.
       </System>
 
       <Section id="delegation-spec" title="Task">

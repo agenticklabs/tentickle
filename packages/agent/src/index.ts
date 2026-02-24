@@ -41,16 +41,13 @@ export { ActiveJobs } from "./components/active-jobs.js";
 export { createTaskTool } from "./tools/task-list.js";
 export { createSpawnTool } from "./tools/spawn.js";
 export { createExploreTool } from "./tools/explore.js";
-export { createDelegateTool } from "./tools/delegate.js";
-export { createInspectJobTool } from "./tools/inspect-job.js";
-export { createApproveJobTool, createCancelJobTool } from "./tools/job-control.js";
 export {
-  createSendToDelegateTool,
-  createInspectDelegateTool,
-  createCompleteDelegationTool,
-  createEscalateTool,
+  createDelegateTool,
+  createSendSessionTool,
+  createNotifyParentTool,
+  createSessionsTool,
   createRunVerificationTool,
-} from "./tools/supervisor-tools.js";
+} from "./tools/delegate.js";
 export { AddDirCommand } from "./tools/add-dir.js";
 
 // Path helpers

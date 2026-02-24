@@ -42,7 +42,6 @@ function createMockSession(
   if (resolveImmediately) {
     sendResult = isError ? Promise.reject(result) : Promise.resolve(result ?? { response: "done" });
   } else {
-    // Deferred: resolve after a short delay so tests can inspect intermediate state
     sendResult = new Promise((resolve, reject) => {
       setTimeout(() => {
         if (isError) reject(result);
@@ -50,14 +49,12 @@ function createMockSession(
       }, 5);
     });
   }
-  // Suppress unhandled rejection for error cases — caught by .then(_, onRejected)
   sendResult.catch(() => {});
 
   const channels = new Map<string, ReturnType<typeof createMockChannel>>();
 
   const session = Object.assign(new EventEmitter(), {
     id,
-    // Return a ProcedurePromise-like: awaitable AND has .result synchronously
     send: vi.fn().mockImplementation(() => {
       const handle = { result: sendResult };
       return Object.assign(Promise.resolve(handle), { result: sendResult });
@@ -76,23 +73,31 @@ function createMockSession(
   return session as MockSession;
 }
 
-// Shorthand for sessions that resolve immediately (for tests that only care about the result)
 function createImmediateSession(id: string, result?: SendResult | Error): MockSession {
   return createMockSession(id, { result, resolveImmediately: true });
 }
 
 function createMockApp(sessions: MockSession[] = []) {
   let sessionIndex = 0;
-  const receivedMessages: Array<{ source: string; type: string; payload: unknown }> = [];
+  const receivedMessages: Array<{
+    targetSessionId: string;
+    source: string;
+    type: string;
+    payload: unknown;
+  }> = [];
   const closedSessions: string[] = [];
 
   const sessionMap = new Map<string, MockSession>();
   for (const s of sessions) sessionMap.set(s.id, s);
 
   return {
-    session: vi.fn(async (id?: string) => {
+    session: vi.fn(async (idOrOptions?: string | { parentSessionId?: string }) => {
+      if (typeof idOrOptions === "object" && idOrOptions !== null) {
+        if (sessionIndex < sessions.length) return sessions[sessionIndex++];
+        throw new Error("No more mock sessions available");
+      }
+      const id = idOrOptions;
       if (id && sessionMap.has(id)) return sessionMap.get(id)!;
-      // Auto-create for ID lookups (e.g. owner session for confirmation routing)
       if (id) {
         const auto = createMockSession(id, { resolveImmediately: true });
         sessionMap.set(id, auto);
@@ -101,8 +106,12 @@ function createMockApp(sessions: MockSession[] = []) {
       if (sessionIndex < sessions.length) return sessions[sessionIndex++];
       throw new Error("No more mock sessions available");
     }),
-    receive: vi.fn(async (msg: any) => {
-      receivedMessages.push(msg);
+    receive: vi.fn(async (sessionIdOrMsg: string | any, msg?: any) => {
+      if (typeof sessionIdOrMsg === "string" && msg) {
+        receivedMessages.push({ targetSessionId: sessionIdOrMsg, ...msg });
+        return;
+      }
+      receivedMessages.push({ targetSessionId: "unknown", ...sessionIdOrMsg });
     }),
     close: vi.fn(async (id: string) => {
       closedSessions.push(id);
@@ -116,15 +125,12 @@ function createMockApp(sessions: MockSession[] = []) {
 // Imports
 // ---------------------------------------------------------------------------
 
-import { createDelegateTool } from "../tools/delegate.js";
-import { createInspectJobTool } from "../tools/inspect-job.js";
-import { createApproveJobTool, createCancelJobTool } from "../tools/job-control.js";
 import {
-  createSendToDelegateTool,
-  createInspectDelegateTool,
-  createCompleteDelegationTool,
-  createEscalateTool,
-} from "../tools/supervisor-tools.js";
+  createDelegateTool,
+  createSendSessionTool,
+  createNotifyParentTool,
+  createSessionsTool,
+} from "../tools/delegate.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -140,17 +146,15 @@ function text(result: Array<{ type: string; text: string }>): string {
   return result.map((b) => b.text).join("\n");
 }
 
-// createTool returns a ToolClass with `.run` Procedure.
-// `.run(input).result` resolves to ContentBlock[].
 async function run(tool: any, input: any): Promise<Array<{ type: string; text: string }>> {
   return tool.run(input).result;
 }
 
-// ---------------------------------------------------------------------------
-// Dispatch delegation — end-to-end
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// delegate tool — dispatch mode
+// ===========================================================================
 
-describe("delegation integration: dispatch", () => {
+describe("delegate: dispatch", () => {
   let store: TentickleSessionStore;
   let delegateSession: MockSession;
   let app: ReturnType<typeof createMockApp>;
@@ -206,13 +210,14 @@ describe("delegation integration: dispatch", () => {
     expect(store.getSnapshotValue("delegate-1", "result")).toBe("done");
   });
 
-  it("notifies parent on completion via app.receive", async () => {
+  it("notifies parent on completion via direct delivery", async () => {
     await run(tool, { description: "Fix the bug", spec: "Find and fix the null pointer" });
     await new Promise((r) => setTimeout(r, 10));
 
     expect(app.receivedMessages).toHaveLength(1);
     const msg = app.receivedMessages[0];
-    expect(msg.source).toBe("session:delegate-1");
+    expect(msg.targetSessionId).toBe("owner-1");
+    expect(msg.source).toBe("delegation");
     expect(msg.type).toBe("message");
     const t = extractText((msg.payload as any).content);
     expect(t).toContain("[Delegation Complete]");
@@ -232,27 +237,44 @@ describe("delegation integration: dispatch", () => {
     expect(store.getSnapshotValue("fail-1", "error")).toBe("Crashed hard");
 
     expect(failApp.receivedMessages).toHaveLength(1);
+    expect(failApp.receivedMessages[0].targetSessionId).toBe("owner-1");
     const t = extractText((failApp.receivedMessages[0].payload as any).content);
     expect(t).toContain("[Delegation Failed]");
     expect(t).toContain("Crashed hard");
   });
 
-  it("returns validation error when missing description", async () => {
-    const result = await run(tool, { spec: "something" });
-    expect(text(result)).toContain("description and spec are required");
-  });
+  it("skips notification if delegate already handled (notify_parent guard)", async () => {
+    // Use a delayed result so we can mark as completed before .then() fires
+    const customResult = new Promise<SendResult>((resolve) => {
+      setTimeout(() => resolve({ response: "Original completion" }), 50);
+    });
+    const customSession = createMockSession("guard-1");
+    customSession.send.mockImplementation(() => {
+      const handle = { result: customResult };
+      return Object.assign(Promise.resolve(handle), { result: customResult });
+    });
+    const customApp = createMockApp([customSession]);
+    const customTool = createDelegateTool(customApp as any, store, "owner-1");
 
-  it("returns validation error when missing spec", async () => {
-    const result = await run(tool, { description: "something" });
-    expect(text(result)).toContain("description and spec are required");
+    await run(customTool, { description: "Guarded", spec: "Test guard" });
+
+    // Simulate delegate calling notify_parent before dispatch handler fires
+    store.updateSessionMeta("guard-1", { status: "completed" });
+    store.setSnapshotValue("guard-1", "result", "Set by notify_parent");
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Dispatch handler should have skipped because status was no longer "active"
+    expect(store.getSnapshotValue("guard-1", "result")).toBe("Set by notify_parent");
+    expect(customApp.receivedMessages).toHaveLength(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Supervised delegation — end-to-end
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// delegate tool — supervised mode
+// ===========================================================================
 
-describe("delegation integration: supervised", () => {
+describe("delegate: supervised", () => {
   let store: TentickleSessionStore;
   let delegateSession: MockSession;
   let supervisorSession: MockSession;
@@ -263,9 +285,9 @@ describe("delegation integration: supervised", () => {
     store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
 
-    delegateSession = createMockSession("sup-delegate-1");
     supervisorSession = createMockSession("supervisor-1");
-    app = createMockApp([delegateSession, supervisorSession]);
+    delegateSession = createMockSession("sup-delegate-1");
+    app = createMockApp([supervisorSession, delegateSession]);
     tool = createDelegateTool(app as any, store, "owner-1");
   });
 
@@ -274,10 +296,10 @@ describe("delegation integration: supervised", () => {
       description: "Refactor auth module",
       spec: "Extract auth logic into service class",
       supervised: true,
-      supervisorCriteria: "Tests pass, no regressions",
+      criteria: "Tests pass, no regressions",
     });
 
-    expect(text(result)).toContain("Delegation started (supervised)");
+    expect(text(result)).toContain("Supervised delegation started");
     expect(text(result)).toContain("sup-delegate-1");
     expect(text(result)).toContain("supervisor-1");
 
@@ -301,7 +323,7 @@ describe("delegation integration: supervised", () => {
       description: "Task",
       spec: "Do the thing",
       supervised: true,
-      supervisorCriteria: "It works",
+      criteria: "It works",
     });
 
     expect(delegateSession.mount).toHaveBeenCalledOnce();
@@ -309,7 +331,8 @@ describe("delegation integration: supervised", () => {
     const sendText = supervisorSession.send.mock.calls[0][0].messages[0].content[0].text;
     expect(sendText).toContain("Do the thing");
     expect(sendText).toContain("It works");
-    expect(sendText).toContain("send_to_delegate");
+    expect(sendText).toContain("send_session");
+    expect(sendText).toContain("notify_parent");
   });
 
   it("marks both sessions completed on supervisor success", async () => {
@@ -317,7 +340,7 @@ describe("delegation integration: supervised", () => {
       description: "Task",
       spec: "Do it",
       supervised: true,
-      supervisorCriteria: "Passes",
+      criteria: "Passes",
     });
     await new Promise((r) => setTimeout(r, 10));
 
@@ -326,16 +349,16 @@ describe("delegation integration: supervised", () => {
   });
 
   it("marks both sessions failed on supervisor error", async () => {
-    const failDelegate = createMockSession("fd-1");
     const failSupervisor = createMockSession("fs-1", { result: new Error("Supervisor crashed") });
-    const failApp = createMockApp([failDelegate, failSupervisor]);
+    const failDelegate = createMockSession("fd-1");
+    const failApp = createMockApp([failSupervisor, failDelegate]);
     const failTool = createDelegateTool(failApp as any, store, "owner-1");
 
     await run(failTool, {
       description: "Doomed",
       spec: "Fail",
       supervised: true,
-      supervisorCriteria: "Never",
+      criteria: "Never",
     });
     await new Promise((r) => setTimeout(r, 10));
 
@@ -344,19 +367,18 @@ describe("delegation integration: supervised", () => {
     expect(store.getSnapshotValue("fs-1", "error")).toBe("Supervisor crashed");
   });
 
-  it("returns validation error when supervisorCriteria missing", async () => {
+  it("returns validation error when criteria missing for supervised", async () => {
     const result = await run(tool, {
       description: "Task",
       spec: "Do it",
       supervised: true,
     });
-    expect(text(result)).toContain("supervisorCriteria is required");
+    expect(text(result)).toContain("criteria required");
   });
 
-  it("does not overwrite status if supervisor already completed via complete_delegation", async () => {
-    // Use a longer delay so we can mark as completed before .then() fires
+  it("does not overwrite status if supervisor already completed via notify_parent", async () => {
     const customResult = new Promise<SendResult>((resolve) => {
-      setTimeout(() => resolve({ response: "All done via complete_delegation" }), 50);
+      setTimeout(() => resolve({ response: "All done" }), 50);
     });
     const customSupervisor = createMockSession("cs-1");
     customSupervisor.send.mockImplementation(() => {
@@ -364,161 +386,88 @@ describe("delegation integration: supervised", () => {
       return Object.assign(Promise.resolve(handle), { result: customResult });
     });
     const customDelegate = createMockSession("cd-1");
-    const customApp = createMockApp([customDelegate, customSupervisor]);
+    const customApp = createMockApp([customSupervisor, customDelegate]);
     const customTool = createDelegateTool(customApp as any, store, "owner-1");
 
     await run(customTool, {
       description: "Pre-completed",
       spec: "Spec",
       supervised: true,
-      supervisorCriteria: "Criteria",
+      criteria: "Criteria",
     });
 
-    // Simulate complete_delegation tool marking supervisor done before .then() fires
+    // Simulate notify_parent({ type: "completion" }) marking supervisor done
     store.updateSessionMeta("cs-1", { status: "completed" });
     store.setSnapshotValue("cs-1", "result", "Completed by tool");
 
-    // Wait for the deferred result to resolve and .then() to fire
     await new Promise((r) => setTimeout(r, 60));
 
-    // The .then() should NOT overwrite because status was already 'completed'
     expect(store.getSnapshotValue("cs-1", "result")).toBe("Completed by tool");
     expect(store.getSessionMeta("cs-1")!.status).toBe("completed");
+
+    // Critical: owner must NOT receive a duplicate notification from the .then() handler
+    expect(customApp.receivedMessages).toHaveLength(0);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Follow-up
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// send_session tool
+// ===========================================================================
 
-describe("delegation integration: follow-up", () => {
-  let store: TentickleSessionStore;
+describe("send_session", () => {
+  it("sends message and returns response", async () => {
+    const delegateSession = createImmediateSession("del-1", {
+      response: "Fixed the auth module. All tests pass.",
+    });
+    const app = createMockApp([delegateSession]);
+    const tool = createSendSessionTool(app as any);
 
-  beforeEach(() => {
-    store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
+    const result = await run(tool, { sessionId: "del-1", message: "Fix the auth module" });
+
+    expect(text(result)).toBe("Fixed the auth module. All tests pass.");
+    expect(delegateSession.send).toHaveBeenCalledOnce();
   });
 
-  it("sends follow-up to dispatch delegation", async () => {
+  it("sends to any session by ID (follow-up replacement)", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
     store.initSession("del-1", {
       parentSessionId: "owner-1",
       sessionType: "delegation",
       title: "Task",
     });
 
-    const targetSession = createMockSession("del-1");
-    const app = createMockApp([targetSession]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    const result = await run(tool, { sessionId: "del-1", message: "How's progress?" });
-
-    expect(text(result)).toContain("Follow-up sent to session del-1");
-    expect(targetSession.send).toHaveBeenCalledOnce();
-    const t = targetSession.send.mock.calls[0][0].messages[0].content[0].text;
-    expect(t).toBe("How's progress?");
-  });
-
-  it("routes follow-up to supervisor when targeting supervised delegate", async () => {
-    store.initSession("sup-1", {
-      parentSessionId: "owner-1",
-      sessionType: "supervision",
-      title: "Supervised task",
-    });
-    store.initSession("del-1", {
-      parentSessionId: "sup-1",
-      sessionType: "delegation",
-      title: "Delegate",
-    });
-
-    const supervisorSession = createMockSession("sup-1");
-    const app = createMockApp([supervisorSession]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
+    const session = createImmediateSession("del-1", { response: "Got it" });
+    const app = createMockApp([session]);
+    const tool = createSendSessionTool(app as any);
 
     const result = await run(tool, { sessionId: "del-1", message: "Priority change!" });
-
-    expect(text(result)).toContain("Follow-up sent to session sup-1");
-    expect(supervisorSession.send).toHaveBeenCalledOnce();
+    expect(text(result)).toBe("Got it");
   });
 
-  it("sends directly to supervisor when targeting it", async () => {
-    store.initSession("sup-1", {
-      parentSessionId: "owner-1",
-      sessionType: "supervision",
-      title: "Supervised task",
-    });
-
-    const supervisorSession = createMockSession("sup-1");
-    const app = createMockApp([supervisorSession]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    const result = await run(tool, { sessionId: "sup-1", message: "Check status" });
-    expect(text(result)).toContain("Follow-up sent to session sup-1");
-  });
-
-  it("rejects follow-up to non-delegation session", async () => {
-    store.initSession("chat-1", { sessionType: "chat", title: "Chat" });
-
-    const app = createMockApp([]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    await expect(run(tool, { sessionId: "chat-1", message: "Hi" })).rejects.toThrow(
-      "not a delegation",
-    );
-  });
-
-  it("rejects follow-up to non-existent session", async () => {
-    const app = createMockApp([]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    await expect(run(tool, { sessionId: "nope", message: "Hi" })).rejects.toThrow("not found");
-  });
-
-  it("returns validation error when message missing", async () => {
-    const app = createMockApp([]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    const result = await run(tool, { sessionId: "anything" });
-    expect(text(result)).toContain("message is required");
-  });
-
-  it("records error in KV when follow-up send fails", async () => {
-    store.initSession("del-1", {
-      parentSessionId: "owner-1",
-      sessionType: "delegation",
-      title: "Task",
-    });
-
-    // Create a session whose send() result rejects
+  it("propagates error when session send fails", async () => {
     const failResult = Promise.reject(new Error("session overloaded"));
-    failResult.catch(() => {}); // suppress unhandled rejection
-    const failSession: MockSession = {
+    failResult.catch(() => {});
+    const failSession = {
       id: "del-1",
       send: vi.fn().mockImplementation(() => {
         return Object.assign(Promise.resolve({ result: failResult }), { result: failResult });
       }),
-      mount: vi.fn().mockResolvedValue(undefined),
-      snapshot: vi.fn().mockReturnValue({ timeline: [] }),
-    };
+    } as any;
     const app = createMockApp([failSession]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
+    const tool = createSendSessionTool(app as any);
 
-    // Should still return "Follow-up sent" (fire-and-forget)
-    const result = await run(tool, { sessionId: "del-1", message: "Check in" });
-    expect(text(result)).toContain("Follow-up sent");
-
-    // Wait for the error handler to fire
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Error should be recorded in KV
-    expect(store.getSnapshotValue("del-1", "follow_up_error")).toBe("session overloaded");
+    await expect(run(tool, { sessionId: "del-1", message: "Hello" })).rejects.toThrow(
+      "session overloaded",
+    );
   });
 });
 
-// ---------------------------------------------------------------------------
-// Supervisor tools — send_to_delegate, inspect, complete, escalate
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// notify_parent tool
+// ===========================================================================
 
-describe("supervisor tools integration", () => {
+describe("notify_parent", () => {
   let store: TentickleSessionStore;
 
   beforeEach(() => {
@@ -536,213 +485,153 @@ describe("supervisor tools integration", () => {
     });
   });
 
-  it("send_to_delegate sends message and returns response", async () => {
-    const delegateSession = createImmediateSession("del-1", {
-      response: "Fixed the auth module. All tests pass.",
-    });
-    const app = createMockApp([delegateSession]);
-    const tool = createSendToDelegateTool(app as any, "del-1");
-
-    const result = await run(tool, { message: "Fix the auth module" });
-
-    expect(text(result)).toBe("Fixed the auth module. All tests pass.");
-    expect(delegateSession.send).toHaveBeenCalledOnce();
-  });
-
-  it("inspect_delegate shows timeline entries", async () => {
-    const delegateSession: MockSession = {
-      id: "del-1",
-      send: vi.fn(),
-      mount: vi.fn(),
-      snapshot: vi.fn().mockReturnValue({
-        timeline: [
-          { message: { role: "user", content: [{ type: "text", text: "Fix auth" }] } },
-          {
-            message: {
-              role: "assistant",
-              content: [{ type: "text", text: "I'll fix the auth module now." }],
-            },
-          },
-        ],
-      }),
-    };
-    const app = createMockApp([delegateSession]);
-    const tool = createInspectDelegateTool(app as any, "del-1");
-
-    const result = await run(tool, { lastN: 5 });
-
-    expect(text(result)).toContain("[user] Fix auth");
-    expect(text(result)).toContain("[assistant] I'll fix the auth module now.");
-  });
-
-  it("complete_delegation marks supervisor done and notifies parent", async () => {
+  it("completion marks session done and notifies parent", async () => {
     const app = createMockApp([]);
-    const tool = createCompleteDelegationTool(app as any, store, "sup-1");
+    const tool = createNotifyParentTool(app as any, store, "sup-1");
 
-    const result = await run(tool, { summary: "Auth refactored, 100% test coverage" });
+    const result = await run(tool, {
+      type: "completion",
+      message: "Auth refactored, 100% test coverage",
+    });
 
-    expect(text(result)).toContain("Delegation marked complete");
+    expect(text(result)).toContain("Marked complete");
 
     expect(store.getSessionMeta("sup-1")!.status).toBe("completed");
     expect(store.getSnapshotValue("sup-1", "result")).toBe("Auth refactored, 100% test coverage");
 
+    // Delegate child should be closed
     expect(store.getSessionMeta("del-1")!.status).toBe("completed");
     expect(app.closedSessions).toContain("del-1");
 
+    // Parent notification
     expect(app.receivedMessages).toHaveLength(1);
     const msg = app.receivedMessages[0];
-    expect(msg.source).toBe("session:sup-1");
+    expect(msg.targetSessionId).toBe("owner-1");
+    expect(msg.source).toBe("delegation");
     const t = extractText((msg.payload as any).content);
     expect(t).toContain("[Delegation Complete]");
     expect(t).toContain("Review auth refactor");
   });
 
-  it("escalate sends reason to parent with session title", async () => {
+  it("escalation notifies parent without closing session", async () => {
     const app = createMockApp([]);
-    const tool = createEscalateTool(app as any, store, "owner-1", "sup-1");
+    const tool = createNotifyParentTool(app as any, store, "sup-1");
 
-    const result = await run(tool, { reason: "Tests failing, need help" });
+    const result = await run(tool, {
+      type: "escalation",
+      message: "Tests failing, need help",
+    });
 
     expect(text(result)).toContain("Escalation sent");
 
     expect(app.receivedMessages).toHaveLength(1);
     const msg = app.receivedMessages[0];
-    expect(msg.source).toBe("session:sup-1");
+    expect(msg.targetSessionId).toBe("owner-1");
+    expect(msg.source).toBe("escalation");
     const t = extractText((msg.payload as any).content);
     expect(t).toContain("[Escalation]");
     expect(t).toContain("Review auth refactor");
     expect(t).toContain("Tests failing, need help");
+
+    // Session stays active
+    expect(store.getSessionMeta("sup-1")!.status).toBe("active");
+  });
+
+  it("errors when no parent session", async () => {
+    store.initSession("orphan-1", { sessionType: "delegation", title: "Orphan" });
+    const app = createMockApp([]);
+    const tool = createNotifyParentTool(app as any, store, "orphan-1");
+
+    const result = await run(tool, { type: "completion", message: "Done" });
+    expect(text(result)).toContain("no parent session");
+  });
+
+  it("completion after escalation still works", async () => {
+    const app = createMockApp([]);
+    const tool = createNotifyParentTool(app as any, store, "sup-1");
+
+    await run(tool, { type: "escalation", message: "Need help" });
+    expect(app.receivedMessages).toHaveLength(1);
+
+    await run(tool, { type: "completion", message: "Resolved after guidance" });
+    expect(store.getSessionMeta("sup-1")!.status).toBe("completed");
+    expect(app.receivedMessages).toHaveLength(2);
+  });
+
+  it("completion is idempotent", async () => {
+    const app = createMockApp([]);
+    const tool = createNotifyParentTool(app as any, store, "sup-1");
+
+    await run(tool, { type: "completion", message: "Done!" });
+    await run(tool, { type: "completion", message: "Done again!" });
+
+    expect(store.getSessionMeta("sup-1")!.status).toBe("completed");
+    expect(store.getSnapshotValue("sup-1", "result")).toBe("Done again!");
+  });
+
+  it("delegate can also use notify_parent for escalation", async () => {
+    const app = createMockApp([]);
+    const tool = createNotifyParentTool(app as any, store, "del-1");
+
+    const result = await run(tool, {
+      type: "escalation",
+      message: "Stuck on types",
+    });
+
+    expect(text(result)).toContain("Escalation sent");
+    expect(app.receivedMessages).toHaveLength(1);
+    expect(app.receivedMessages[0].targetSessionId).toBe("sup-1");
+    expect(app.receivedMessages[0].source).toBe("escalation");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Job control tools — approve, cancel
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// sessions tool — list
+// ===========================================================================
 
-describe("job control integration", () => {
-  let store: TentickleSessionStore;
-
-  beforeEach(() => {
-    store = freshStore();
+describe("sessions: list", () => {
+  it("lists active delegations", async () => {
+    const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-  });
-
-  it("approve_job closes dispatch delegation", async () => {
     store.initSession("del-1", {
       parentSessionId: "owner-1",
       sessionType: "delegation",
-      title: "Task",
-      status: "completed",
+      title: "Fix bug",
+      status: "active",
     });
-
-    const app = createMockApp([]);
-    const tool = createApproveJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "del-1" });
-
-    expect(text(result)).toContain("approved");
-    expect(app.closedSessions).toContain("del-1");
-  });
-
-  it("approve_job closes supervised delegation and its children", async () => {
-    store.initSession("sup-1", {
-      parentSessionId: "owner-1",
-      sessionType: "supervision",
-      title: "Supervised",
-      status: "completed",
-    });
-    store.initSession("del-1", {
-      parentSessionId: "sup-1",
-      sessionType: "delegation",
-      title: "Delegate",
-      status: "completed",
-    });
-
-    const app = createMockApp([]);
-    const tool = createApproveJobTool(app as any, store);
-    await run(tool, { sessionId: "sup-1" });
-
-    expect(app.closedSessions).toContain("sup-1");
-    expect(app.closedSessions).toContain("del-1");
-  });
-
-  it("approve_job marks active session as completed before closing", async () => {
-    store.initSession("del-1", {
+    store.initSession("del-2", {
       parentSessionId: "owner-1",
       sessionType: "delegation",
-      title: "Task",
+      title: "Add feature",
       status: "active",
     });
 
     const app = createMockApp([]);
-    const tool = createApproveJobTool(app as any, store);
-    await run(tool, { sessionId: "del-1" });
+    const tool = createSessionsTool(app as any, store, "owner-1");
 
-    expect(store.getSessionMeta("del-1")!.status).toBe("completed");
-    expect(store.getSnapshotValue("del-1", "result")).toBe("Approved by parent");
+    const result = await run(tool, { action: "list" });
+    const t = text(result);
+    expect(t).toContain("Fix bug");
+    expect(t).toContain("Add feature");
   });
 
-  it("cancel_job marks delegation as failed and closes", async () => {
-    store.initSession("del-1", {
-      parentSessionId: "owner-1",
-      sessionType: "delegation",
-      title: "Task",
-      status: "active",
-    });
+  it("returns empty when no active delegations", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
 
     const app = createMockApp([]);
-    const tool = createCancelJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "del-1", reason: "Wrong approach" });
+    const tool = createSessionsTool(app as any, store, "owner-1");
 
-    expect(text(result)).toContain("cancelled");
-    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
-    expect(store.getSnapshotValue("del-1", "error")).toBe("Wrong approach");
-    expect(app.closedSessions).toContain("del-1");
-  });
-
-  it("cancel_job cascades to children of supervised delegation", async () => {
-    store.initSession("sup-1", {
-      parentSessionId: "owner-1",
-      sessionType: "supervision",
-      title: "Supervised",
-      status: "active",
-    });
-    store.initSession("del-1", {
-      parentSessionId: "sup-1",
-      sessionType: "delegation",
-      title: "Delegate",
-      status: "active",
-    });
-
-    const app = createMockApp([]);
-    const tool = createCancelJobTool(app as any, store);
-    await run(tool, { sessionId: "sup-1" });
-
-    expect(store.getSessionMeta("sup-1")!.status).toBe("failed");
-    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
-    expect(app.closedSessions).toContain("sup-1");
-    expect(app.closedSessions).toContain("del-1");
-  });
-
-  it("approve_job handles non-existent session", async () => {
-    const app = createMockApp([]);
-    const tool = createApproveJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "nope" });
-    expect(text(result)).toContain("not found");
-  });
-
-  it("cancel_job handles non-existent session", async () => {
-    const app = createMockApp([]);
-    const tool = createCancelJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "nope" });
-    expect(text(result)).toContain("not found");
+    const result = await run(tool, { action: "list" });
+    expect(text(result)).toContain("No active delegations");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Inspect job tool
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// sessions tool — inspect
+// ===========================================================================
 
-describe("inspect_job integration", () => {
+describe("sessions: inspect", () => {
   let store: TentickleSessionStore;
 
   beforeEach(() => {
@@ -757,19 +646,19 @@ describe("inspect_job integration", () => {
     store.setSnapshotValue("del-1", "objective", "Find and fix the memory leak in worker.ts");
   });
 
-  it("shows session metadata and KV values", async () => {
-    const session: MockSession = {
+  it("shows session metadata and timeline", async () => {
+    const session = {
       id: "del-1",
       send: vi.fn(),
       mount: vi.fn(),
       snapshot: vi.fn().mockReturnValue({
         timeline: [{ message: { role: "user", content: [{ type: "text", text: "Fix it" }] } }],
       }),
-    };
+    } as any;
     const app = createMockApp([session]);
-    const tool = createInspectJobTool(app as any, store);
+    const tool = createSessionsTool(app as any, store, "owner-1");
 
-    const result = await run(tool, { sessionId: "del-1" });
+    const result = await run(tool, { action: "inspect", sessionId: "del-1" });
     const t = text(result);
 
     expect(t).toContain("Session: del-1");
@@ -781,20 +670,190 @@ describe("inspect_job integration", () => {
     expect(t).toContain("[user] Fix it");
   });
 
-  it("handles non-existent session gracefully", async () => {
+  it("handles non-existent session", async () => {
     const app = createMockApp([]);
-    const tool = createInspectJobTool(app as any, store);
+    const tool = createSessionsTool(app as any, store, "owner-1");
 
-    const result = await run(tool, { sessionId: "nope" });
+    const result = await run(tool, { action: "inspect", sessionId: "nope" });
     expect(text(result)).toContain("not found");
+  });
+
+  it("handles unavailable timeline gracefully", async () => {
+    const app = {
+      session: vi.fn().mockRejectedValue(new Error("session gone")),
+      receive: vi.fn(),
+      close: vi.fn(),
+    };
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "inspect", sessionId: "del-1" });
+    const t = text(result);
+
+    expect(t).toContain("Session: del-1");
+    expect(t).toContain("(session not available)");
+  });
+
+  it("shows notification error when present", async () => {
+    store.setSnapshotValue("del-1", "notification_error", "inbox full");
+    store.setSnapshotValue("del-1", "error", "handler threw");
+    store.setSnapshotValue("del-1", "result", "partial output");
+    store.updateSessionMeta("del-1", { status: "failed" });
+
+    const app = {
+      session: vi.fn().mockResolvedValue({ snapshot: () => ({ timeline: [] }) }),
+      receive: vi.fn(),
+      close: vi.fn(),
+    };
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "inspect", sessionId: "del-1" });
+    const t = text(result);
+
+    expect(t).toContain("Error: handler threw");
+    expect(t).toContain("Notification Error: inbox full");
+    expect(t).toContain("Result: partial output");
+    expect(t).toContain("Status: failed");
+  });
+
+  it("requires sessionId", async () => {
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+
+    const result = await run(tool, { action: "inspect" });
+    expect(text(result)).toContain("sessionId required");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Adversarial: race conditions, concurrent delegations, edge cases
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// sessions tool — close
+// ===========================================================================
 
-describe("delegation integration: adversarial", () => {
+describe("sessions: close", () => {
+  let store: TentickleSessionStore;
+
+  beforeEach(() => {
+    store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
+  });
+
+  it("closes dispatch delegation (approve)", async () => {
+    store.initSession("del-1", {
+      parentSessionId: "owner-1",
+      sessionType: "delegation",
+      title: "Task",
+      status: "completed",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "close", sessionId: "del-1" });
+
+    expect(text(result)).toContain("completed");
+    expect(app.closedSessions).toContain("del-1");
+  });
+
+  it("closes supervised delegation and children", async () => {
+    store.initSession("sup-1", {
+      parentSessionId: "owner-1",
+      sessionType: "supervision",
+      title: "Supervised",
+      status: "completed",
+    });
+    store.initSession("del-1", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Delegate",
+      status: "completed",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    await run(tool, { action: "close", sessionId: "sup-1" });
+
+    expect(app.closedSessions).toContain("sup-1");
+    expect(app.closedSessions).toContain("del-1");
+  });
+
+  it("cancel marks as failed with reason", async () => {
+    store.initSession("del-1", {
+      parentSessionId: "owner-1",
+      sessionType: "delegation",
+      title: "Task",
+      status: "active",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, {
+      action: "close",
+      sessionId: "del-1",
+      status: "cancelled",
+      reason: "Wrong approach",
+    });
+
+    expect(text(result)).toContain("cancelled");
+    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
+    expect(store.getSnapshotValue("del-1", "error")).toBe("Wrong approach");
+    expect(app.closedSessions).toContain("del-1");
+  });
+
+  it("cancel cascades to children of supervised delegation", async () => {
+    store.initSession("sup-1", {
+      parentSessionId: "owner-1",
+      sessionType: "supervision",
+      title: "Supervised",
+      status: "active",
+    });
+    store.initSession("del-1", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Delegate",
+      status: "active",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    await run(tool, { action: "close", sessionId: "sup-1", status: "cancelled" });
+
+    expect(store.getSessionMeta("sup-1")!.status).toBe("failed");
+    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
+    expect(app.closedSessions).toContain("sup-1");
+    expect(app.closedSessions).toContain("del-1");
+  });
+
+  it("close with multiple delegate children closes all", async () => {
+    store.initSession("sup-1", {
+      parentSessionId: "owner-1",
+      sessionType: "supervision",
+      title: "Multi-child",
+      status: "completed",
+    });
+    store.initSession("del-a", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Part A",
+      status: "completed",
+    });
+    store.initSession("del-b", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Part B",
+      status: "completed",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    await run(tool, { action: "close", sessionId: "sup-1" });
+
+    expect(app.closedSessions).toContain("sup-1");
+    expect(app.closedSessions).toContain("del-a");
+    expect(app.closedSessions).toContain("del-b");
+  });
+});
+
+// ===========================================================================
+// Adversarial: concurrency, races, error paths
+// ===========================================================================
+
+describe("adversarial: concurrency and errors", () => {
   it("handles multiple concurrent dispatch delegations", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
@@ -840,7 +899,7 @@ describe("delegation integration: adversarial", () => {
     expect(store.getSnapshotValue("del-1", "notification_error")).toBe("inbox full");
   });
 
-  it("handles app.close failure in approve_job without crashing", async () => {
+  it("handles app.close failure in sessions close without crashing", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
     store.initSession("del-1", {
@@ -853,79 +912,132 @@ describe("delegation integration: adversarial", () => {
     const app = createMockApp([]);
     app.close.mockRejectedValue(new Error("already closed"));
 
-    const tool = createApproveJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "del-1" });
-    expect(text(result)).toContain("approved");
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "close", sessionId: "del-1" });
+    expect(text(result)).toContain("completed");
   });
 
-  it("complete_delegation is idempotent", async () => {
+  it("cancel during active delegation — status becomes failed", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-    store.initSession("sup-1", {
-      parentSessionId: "owner-1",
-      sessionType: "supervision",
-      title: "Task",
-      status: "active",
-    });
-    store.initSession("del-1", {
-      parentSessionId: "sup-1",
-      sessionType: "delegation",
-      title: "Delegate",
-      status: "active",
+
+    const neverResult = new Promise<SendResult>(() => {});
+    neverResult.catch(() => {});
+    const hangingSession = createMockSession("del-1");
+    hangingSession.send.mockImplementation(() => {
+      const handle = { result: neverResult };
+      return Object.assign(Promise.resolve(handle), { result: neverResult });
     });
 
-    const app = createMockApp([]);
-    const tool = createCompleteDelegationTool(app as any, store, "sup-1");
+    const app = createMockApp([hangingSession]);
+    const delegateTool = createDelegateTool(app as any, store, "owner-1");
+    const sessionsTool = createSessionsTool(app as any, store, "owner-1");
 
-    await run(tool, { summary: "Done!" });
-    await run(tool, { summary: "Done again!" });
+    await run(delegateTool, { description: "Long task", spec: "This takes forever" });
+    expect(store.getSessionMeta("del-1")!.status).toBe("active");
 
-    expect(store.getSessionMeta("sup-1")!.status).toBe("completed");
-    expect(store.getSnapshotValue("sup-1", "result")).toBe("Done again!");
+    const result = await run(sessionsTool, {
+      action: "close",
+      sessionId: "del-1",
+      status: "cancelled",
+      reason: "Taking too long",
+    });
+    expect(text(result)).toContain("cancelled");
+    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
+    expect(store.getSnapshotValue("del-1", "error")).toBe("Taking too long");
+    expect(app.closedSessions).toContain("del-1");
   });
 
-  it("follow-up to completed delegation still works", async () => {
+  it("cancel supervised delegation during active review", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-    store.initSession("del-1", {
-      parentSessionId: "owner-1",
-      sessionType: "delegation",
-      title: "Task",
-      status: "completed",
+
+    const neverResult = new Promise<SendResult>(() => {});
+    neverResult.catch(() => {});
+    const makeStalledSession = (id: string) => {
+      const s = createMockSession(id);
+      s.send.mockImplementation(() => {
+        const handle = { result: neverResult };
+        return Object.assign(Promise.resolve(handle), { result: neverResult });
+      });
+      return s;
+    };
+
+    const app = createMockApp([makeStalledSession("sup-1"), makeStalledSession("del-1")]);
+    const delegateTool = createDelegateTool(app as any, store, "owner-1");
+    const sessionsTool = createSessionsTool(app as any, store, "owner-1");
+
+    await run(delegateTool, {
+      description: "Task",
+      spec: "Spec",
+      supervised: true,
+      criteria: "Criteria",
     });
+    expect(store.getSessionMeta("sup-1")!.status).toBe("active");
+    expect(store.getSessionMeta("del-1")!.status).toBe("active");
+
+    await run(sessionsTool, { action: "close", sessionId: "sup-1", status: "cancelled" });
+
+    expect(store.getSessionMeta("sup-1")!.status).toBe("failed");
+    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
+    expect(app.closedSessions).toContain("sup-1");
+    expect(app.closedSessions).toContain("del-1");
+  });
+
+  it("notification error on dispatch failure is visible via sessions inspect", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
 
     const session = createMockSession("del-1");
     const app = createMockApp([session]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
+    app.receive.mockRejectedValue(new Error("parent session closed"));
 
-    const result = await run(tool, { sessionId: "del-1", message: "One more thing..." });
+    const delegateTool = createDelegateTool(app as any, store, "owner-1");
 
-    expect(text(result)).toContain("Follow-up sent");
-    expect(session.send).toHaveBeenCalledOnce();
+    await run(delegateTool, { description: "Task", spec: "Spec" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(store.getSnapshotValue("del-1", "notification_error")).toBe("parent session closed");
+
+    const sessionsTool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(sessionsTool, { action: "inspect", sessionId: "del-1" });
+    expect(text(result)).toContain("Notification Error: parent session closed");
   });
 
-  it("inspect_job on session with unavailable timeline falls back gracefully", async () => {
+  it("notification error on supervised failure is visible via sessions inspect", async () => {
     const store = freshStore();
-    store.initSession("del-1", { sessionType: "delegation", title: "Gone" });
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
 
-    const app = {
-      session: vi.fn().mockRejectedValue(new Error("session gone")),
-      receive: vi.fn(),
-      close: vi.fn(),
-    };
+    const supervisorSession = createMockSession("sup-1", {
+      result: new Error("supervisor crashed"),
+    });
+    const delegateSession = createMockSession("del-1");
+    const app = createMockApp([supervisorSession, delegateSession]);
+    app.receive.mockRejectedValue(new Error("inbox exploded"));
 
-    const tool = createInspectJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "del-1" });
-    const t = text(result);
+    const delegateTool = createDelegateTool(app as any, store, "owner-1");
 
-    expect(t).toContain("Session: del-1");
-    expect(t).toContain("(session not available)");
+    await run(delegateTool, {
+      description: "Task",
+      spec: "Spec",
+      supervised: true,
+      criteria: "Criteria",
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(store.getSessionMeta("sup-1")!.status).toBe("failed");
+    expect(store.getSnapshotValue("sup-1", "notification_error")).toBe("inbox exploded");
+
+    const sessionsTool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(sessionsTool, { action: "inspect", sessionId: "sup-1" });
+    expect(text(result)).toContain("Notification Error: inbox exploded");
+    expect(text(result)).toContain("Error: supervisor crashed");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Adversarial: supervisor review loop (the whole point of supervised mode)
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Supervisor review loop — the whole point of supervised mode
+// ===========================================================================
 
 describe("supervisor review loop", () => {
   let store: TentickleSessionStore;
@@ -951,7 +1063,7 @@ describe("supervisor review loop", () => {
 
   it("multi-turn: send → inspect → reject → send again → complete", async () => {
     let delegateCallCount = 0;
-    const delegateSession: MockSession = {
+    const delegateSession = {
       id: "del-1",
       send: vi.fn().mockImplementation(() => {
         delegateCallCount++;
@@ -974,34 +1086,38 @@ describe("supervisor review loop", () => {
           },
         ],
       }),
-    };
+    } as any;
     const app = createMockApp([delegateSession]);
 
-    const sendTool = createSendToDelegateTool(app as any, "del-1");
-    const inspectTool = createInspectDelegateTool(app as any, "del-1");
-    const completeTool = createCompleteDelegationTool(app as any, store, "sup-1");
+    const sendTool = createSendSessionTool(app as any);
+    const sessionsTool = createSessionsTool(app as any, store, "sup-1");
+    const notifyTool = createNotifyParentTool(app as any, store, "sup-1");
 
     // Round 1: send spec, get back "tests broken"
-    const r1 = await run(sendTool, { message: "Refactor the auth module" });
+    const r1 = await run(sendTool, { sessionId: "del-1", message: "Refactor the auth module" });
     expect(text(r1)).toContain("tests broken");
 
     // Inspect: verify we can see what happened
-    const inspect1 = await run(inspectTool, { lastN: 5 });
+    const inspect1 = await run(sessionsTool, { action: "inspect", sessionId: "del-1" });
     expect(text(inspect1)).toContain("[user] Refactor auth");
     expect(text(inspect1)).toContain("[assistant]");
 
     // Round 2: send feedback, get back "fixed"
-    const r2 = await run(sendTool, { message: "Tests are failing. Fix them." });
+    const r2 = await run(sendTool, { sessionId: "del-1", message: "Tests are failing. Fix them." });
     expect(text(r2)).toContain("42 tests pass");
     expect(delegateSession.send).toHaveBeenCalledTimes(2);
 
     // Complete
-    const r3 = await run(completeTool, { summary: "Auth refactored. 42 tests pass." });
-    expect(text(r3)).toContain("Delegation marked complete");
+    const r3 = await run(notifyTool, {
+      type: "completion",
+      message: "Auth refactored. 42 tests pass.",
+    });
+    expect(text(r3)).toContain("Marked complete");
 
     expect(store.getSessionMeta("sup-1")!.status).toBe("completed");
     expect(store.getSessionMeta("del-1")!.status).toBe("completed");
     expect(app.receivedMessages).toHaveLength(1);
+    expect(app.receivedMessages[0].targetSessionId).toBe("owner-1");
     expect(extractText((app.receivedMessages[0].payload as any).content)).toContain(
       "[Delegation Complete]",
     );
@@ -1013,270 +1129,53 @@ describe("supervisor review loop", () => {
     });
     const app = createMockApp([delegateSession]);
 
-    const sendTool = createSendToDelegateTool(app as any, "del-1");
-    const escalateTool = createEscalateTool(app as any, store, "owner-1", "sup-1");
+    const sendTool = createSendSessionTool(app as any);
+    const notifyTool = createNotifyParentTool(app as any, store, "sup-1");
 
     // Send to delegate, get back a hopeless response
-    const r1 = await run(sendTool, { message: "Fix the types" });
+    const r1 = await run(sendTool, { sessionId: "del-1", message: "Fix the types" });
     expect(text(r1)).toContain("fundamentally wrong");
 
     // Escalate instead of completing
-    const r2 = await run(escalateTool, { reason: "Types need redesign, delegate can't fix" });
+    const r2 = await run(notifyTool, {
+      type: "escalation",
+      message: "Types need redesign, delegate can't fix",
+    });
     expect(text(r2)).toContain("Escalation sent");
 
-    // Owner should have received the escalation
     expect(app.receivedMessages).toHaveLength(1);
     const msg = app.receivedMessages[0];
-    expect(msg.source).toBe("session:sup-1");
+    expect(msg.targetSessionId).toBe("owner-1");
+    expect(msg.source).toBe("escalation");
     expect(extractText((msg.payload as any).content)).toContain("[Escalation]");
     expect(extractText((msg.payload as any).content)).toContain("Types need redesign");
 
-    // Supervisor session should still be active (escalation doesn't auto-close)
+    // Session stays active
     expect(store.getSessionMeta("sup-1")!.status).toBe("active");
-  });
-
-  it("complete after escalation still works", async () => {
-    const app = createMockApp([]);
-    const escalateTool = createEscalateTool(app as any, store, "owner-1", "sup-1");
-    const completeTool = createCompleteDelegationTool(app as any, store, "sup-1");
-
-    // Escalate first
-    await run(escalateTool, { reason: "Need help" });
-    expect(app.receivedMessages).toHaveLength(1);
-
-    // Then complete after owner provides guidance
-    await run(completeTool, { summary: "Resolved after guidance" });
-    expect(store.getSessionMeta("sup-1")!.status).toBe("completed");
-    expect(app.receivedMessages).toHaveLength(2); // escalation + completion
   });
 });
 
-// ---------------------------------------------------------------------------
-// Adversarial: race conditions and timing edges
-// ---------------------------------------------------------------------------
-
-describe("delegation races and timing", () => {
-  it("follow-up during completion — follow-up targets the right session", async () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-
-    // Create a session with a delayed result (simulates in-flight completion)
-    let resolveResult: (v: SendResult) => void;
-    const delayedResult = new Promise<SendResult>((r) => {
-      resolveResult = r;
-    });
-    delayedResult.catch(() => {}); // suppress unhandled
-
-    const delegateSession = createMockSession("del-1");
-    delegateSession.send.mockImplementation(() => {
-      const handle = { result: delayedResult };
-      return Object.assign(Promise.resolve(handle), { result: delayedResult });
-    });
-
-    const followUpSession = createImmediateSession("del-1", { response: "Got the follow-up" });
-
-    // First call: app.session() returns delegateSession (for dispatch)
-    // Second call: app.session("del-1") returns followUpSession (for follow-up)
-    const app = createMockApp([delegateSession, followUpSession]);
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    // Dispatch the delegation
-    await run(tool, { description: "Task", spec: "Do the thing" });
-    expect(store.getSessionMeta("del-1")!.status).toBe("active");
-
-    // Send follow-up while delegation is still running
-    const result = await run(tool, { sessionId: "del-1", message: "Priority change!" });
-    expect(text(result)).toContain("Follow-up sent");
-
-    // Now resolve the original delegation
-    resolveResult!({ response: "Original work done" });
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Status should be completed (from the original result handler)
-    expect(store.getSessionMeta("del-1")!.status).toBe("completed");
-  });
-
-  it("rapid double follow-up — both sends fire", async () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-    store.initSession("del-1", {
-      parentSessionId: "owner-1",
-      sessionType: "delegation",
-      title: "Task",
-      status: "active",
-    });
-
-    let sendCount = 0;
-    const session = createMockSession("del-1");
-    session.send.mockImplementation(() => {
-      sendCount++;
-      const result = Promise.resolve({ response: `response-${sendCount}` });
-      return Object.assign(Promise.resolve({ result }), { result });
-    });
-    const app = createMockApp([session]);
-    // app.session("del-1") must return the same session for both calls
-    app.session.mockImplementation(async (id?: string) => {
-      if (id === "del-1") return session;
-      throw new Error("unexpected session request");
-    });
-
-    const tool = createDelegateTool(app as any, store, "owner-1");
-
-    const [r1, r2] = await Promise.all([
-      run(tool, { sessionId: "del-1", message: "First" }),
-      run(tool, { sessionId: "del-1", message: "Second" }),
-    ]);
-
-    expect(text(r1)).toContain("Follow-up sent");
-    expect(text(r2)).toContain("Follow-up sent");
-    expect(session.send).toHaveBeenCalledTimes(2);
-  });
-
-  it("cancel during active delegation — status becomes failed", async () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-
-    // Delegation that never resolves (simulates long-running work)
-    const neverResult = new Promise<SendResult>(() => {});
-    neverResult.catch(() => {}); // suppress
-    const hangingSession = createMockSession("del-1");
-    hangingSession.send.mockImplementation(() => {
-      const handle = { result: neverResult };
-      return Object.assign(Promise.resolve(handle), { result: neverResult });
-    });
-
-    const app = createMockApp([hangingSession]);
-    const delegateTool = createDelegateTool(app as any, store, "owner-1");
-    const cancelTool = createCancelJobTool(app as any, store);
-
-    // Start delegation
-    await run(delegateTool, { description: "Long task", spec: "This takes forever" });
-    expect(store.getSessionMeta("del-1")!.status).toBe("active");
-
-    // Cancel while still running
-    const result = await run(cancelTool, { sessionId: "del-1", reason: "Taking too long" });
-    expect(text(result)).toContain("cancelled");
-    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
-    expect(store.getSnapshotValue("del-1", "error")).toBe("Taking too long");
-    expect(app.closedSessions).toContain("del-1");
-  });
-
-  it("cancel supervised delegation during active review", async () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-
-    // Never-resolving sessions for both delegate and supervisor
-    const neverResult = new Promise<SendResult>(() => {});
-    neverResult.catch(() => {});
-    const makeStalledSession = (id: string) => {
-      const s = createMockSession(id);
-      s.send.mockImplementation(() => {
-        const handle = { result: neverResult };
-        return Object.assign(Promise.resolve(handle), { result: neverResult });
-      });
-      return s;
-    };
-
-    const app = createMockApp([makeStalledSession("del-1"), makeStalledSession("sup-1")]);
-    const delegateTool = createDelegateTool(app as any, store, "owner-1");
-    const cancelTool = createCancelJobTool(app as any, store);
-
-    // Start supervised delegation
-    await run(delegateTool, {
-      description: "Task",
-      spec: "Spec",
-      supervised: true,
-      supervisorCriteria: "Criteria",
-    });
-    expect(store.getSessionMeta("sup-1")!.status).toBe("active");
-    expect(store.getSessionMeta("del-1")!.status).toBe("active");
-
-    // Cancel the supervisor — should cascade to delegate
-    await run(cancelTool, { sessionId: "sup-1", reason: "Abort" });
-
-    expect(store.getSessionMeta("sup-1")!.status).toBe("failed");
-    expect(store.getSessionMeta("del-1")!.status).toBe("failed");
-    expect(app.closedSessions).toContain("sup-1");
-    expect(app.closedSessions).toContain("del-1");
-  });
-
-  it("notification error on dispatch failure is readable via inspect_job", async () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-
-    const session = createMockSession("del-1");
-    const app = createMockApp([session]);
-    app.receive.mockRejectedValue(new Error("parent session closed"));
-
-    const delegateTool = createDelegateTool(app as any, store, "owner-1");
-
-    await run(delegateTool, { description: "Task", spec: "Spec" });
-    await new Promise((r) => setTimeout(r, 10));
-
-    // notification_error should be stored
-    expect(store.getSnapshotValue("del-1", "notification_error")).toBe("parent session closed");
-
-    // And visible via inspect_job
-    const inspectTool = createInspectJobTool(app as any, store);
-    const result = await run(inspectTool, { sessionId: "del-1" });
-    const t = text(result);
-    expect(t).toContain("Notification Error: parent session closed");
-  });
-
-  it("notification error on supervised failure is readable via inspect_job", async () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-
-    const delegateSession = createMockSession("del-1");
-    const supervisorSession = createMockSession("sup-1", {
-      result: new Error("supervisor crashed"),
-    });
-    const app = createMockApp([delegateSession, supervisorSession]);
-    app.receive.mockRejectedValue(new Error("inbox exploded"));
-
-    const delegateTool = createDelegateTool(app as any, store, "owner-1");
-
-    await run(delegateTool, {
-      description: "Task",
-      spec: "Spec",
-      supervised: true,
-      supervisorCriteria: "Criteria",
-    });
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Supervisor failed, notification to parent also failed
-    expect(store.getSessionMeta("sup-1")!.status).toBe("failed");
-    expect(store.getSnapshotValue("sup-1", "notification_error")).toBe("inbox exploded");
-
-    const inspectTool = createInspectJobTool(app as any, store);
-    const result = await run(inspectTool, { sessionId: "sup-1" });
-    expect(text(result)).toContain("Notification Error: inbox exploded");
-    expect(text(result)).toContain("Error: supervisor crashed");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Adversarial: deep topology (nested delegation)
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Deep delegation topology
+// ===========================================================================
 
 describe("deep delegation topology", () => {
   it("owner → supervisor → delegate with full lifecycle", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
 
-    const delegateSession = createMockSession("deep-del");
     const supervisorSession = createMockSession("deep-sup");
-    const app = createMockApp([delegateSession, supervisorSession]);
+    const delegateSession = createMockSession("deep-del");
+    const app = createMockApp([supervisorSession, delegateSession]);
     const tool = createDelegateTool(app as any, store, "owner-1");
 
     await run(tool, {
       description: "Deep task",
       spec: "Nested work",
       supervised: true,
-      supervisorCriteria: "Must pass",
+      criteria: "Must pass",
     });
 
-    // Verify three-level topology
     const ownerMeta = store.getSessionMeta("owner-1");
     const supMeta = store.getSessionMeta("deep-sup");
     const delMeta = store.getSessionMeta("deep-del");
@@ -1287,7 +1186,6 @@ describe("deep delegation topology", () => {
     expect(delMeta!.session_type).toBe("delegation");
     expect(delMeta!.parent_session_id).toBe("deep-sup");
 
-    // getChildSessions traversals work
     const ownerChildren = store.getChildSessions("owner-1");
     expect(ownerChildren).toHaveLength(1);
     expect(ownerChildren[0].id).toBe("deep-sup");
@@ -1296,7 +1194,6 @@ describe("deep delegation topology", () => {
     expect(supChildren).toHaveLength(1);
     expect(supChildren[0].id).toBe("deep-del");
 
-    // getActiveDelegations only returns direct children
     const activeDels = store.getActiveDelegations("owner-1");
     expect(activeDels).toHaveLength(1);
     expect(activeDels[0].session_type).toBe("supervision");
@@ -1306,7 +1203,6 @@ describe("deep delegation topology", () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
 
-    // d3 uses a never-resolving send so it stays active through the assertions
     const d3 = createMockSession("d3");
     const neverResolves = new Promise<never>(() => {});
     d3.send.mockImplementation(() =>
@@ -1320,221 +1216,110 @@ describe("deep delegation topology", () => {
     const app = createMockApp(sessions);
     const tool = createDelegateTool(app as any, store, "owner-1");
 
-    // Fire off 3 delegations
     await Promise.all([
       run(tool, { description: "Task 1", spec: "Fast" }),
       run(tool, { description: "Task 2", spec: "Also fast" }),
       run(tool, { description: "Task 3", spec: "Slow" }),
     ]);
 
-    // Wait for the immediate ones to complete
     await new Promise((r) => setTimeout(r, 10));
 
     expect(store.getSessionMeta("d1")!.status).toBe("completed");
     expect(store.getSessionMeta("d2")!.status).toBe("completed");
     expect(store.getSessionMeta("d3")!.status).toBe("active");
 
-    // Only the slow one shows as active
     const active = store.getActiveDelegations("owner-1");
     expect(active).toHaveLength(1);
     expect(active[0].id).toBe("d3");
 
-    // All are children of owner
     const children = store.getChildSessions("owner-1");
     expect(children).toHaveLength(3);
   });
+});
 
-  it("approve_job on supervisor with multiple delegate children closes all", async () => {
+// ===========================================================================
+// Direct delivery pattern
+// ===========================================================================
+
+describe("direct delivery", () => {
+  it("dispatch notification targets parent directly", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
+
+    const delegateSession = createMockSession("del-1");
+    const app = createMockApp([delegateSession]);
+    const tool = createDelegateTool(app as any, store, "owner-1");
+
+    await run(tool, { description: "Task", spec: "Spec" });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(app.receivedMessages).toHaveLength(1);
+    expect(app.receivedMessages[0].targetSessionId).toBe("owner-1");
+    expect(app.receivedMessages[0].source).toBe("delegation");
+  });
+
+  it("supervised notification targets owner directly", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
+
+    const supervisorSession = createMockSession("sup-1");
+    const delegateSession = createMockSession("del-1");
+    const app = createMockApp([supervisorSession, delegateSession]);
+    const tool = createDelegateTool(app as any, store, "owner-1");
+
+    await run(tool, {
+      description: "Task",
+      spec: "Spec",
+      supervised: true,
+      criteria: "Criteria",
+    });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(app.receivedMessages).toHaveLength(1);
+    expect(app.receivedMessages[0].targetSessionId).toBe("owner-1");
+    expect(app.receivedMessages[0].source).toBe("delegation");
+  });
+
+  it("notify_parent escalation targets parent directly", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
     store.initSession("sup-1", {
       parentSessionId: "owner-1",
       sessionType: "supervision",
-      title: "Multi-child",
-      status: "completed",
-    });
-    // Two delegates under one supervisor (unusual but should work)
-    store.initSession("del-a", {
-      parentSessionId: "sup-1",
-      sessionType: "delegation",
-      title: "Part A",
-      status: "completed",
-    });
-    store.initSession("del-b", {
-      parentSessionId: "sup-1",
-      sessionType: "delegation",
-      title: "Part B",
-      status: "completed",
+      title: "Task",
     });
 
     const app = createMockApp([]);
-    const tool = createApproveJobTool(app as any, store);
-    await run(tool, { sessionId: "sup-1" });
+    const tool = createNotifyParentTool(app as any, store, "sup-1");
+    await run(tool, { type: "escalation", message: "Stuck" });
 
-    expect(app.closedSessions).toContain("sup-1");
-    expect(app.closedSessions).toContain("del-a");
-    expect(app.closedSessions).toContain("del-b");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// inspect_job: error KV surfacing
-// ---------------------------------------------------------------------------
-
-describe("inspect_job error surfacing", () => {
-  it("shows follow_up_error when present", async () => {
-    const store = freshStore();
-    store.initSession("del-1", {
-      sessionType: "delegation",
-      title: "Task",
-      status: "active",
-    });
-    store.setSnapshotValue("del-1", "follow_up_error", "connection reset");
-
-    const app = {
-      session: vi.fn().mockResolvedValue({
-        snapshot: () => ({ timeline: [] }),
-      }),
-      receive: vi.fn(),
-      close: vi.fn(),
-    };
-    const tool = createInspectJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "del-1" });
-
-    expect(text(result)).toContain("Follow-up Error: connection reset");
+    expect(app.receivedMessages).toHaveLength(1);
+    expect(app.receivedMessages[0].targetSessionId).toBe("owner-1");
+    expect(app.receivedMessages[0].source).toBe("escalation");
   });
 
-  it("shows all error types simultaneously", async () => {
-    const store = freshStore();
-    store.initSession("del-1", {
-      sessionType: "delegation",
-      title: "Cursed task",
-      status: "failed",
-    });
-    store.setSnapshotValue("del-1", "error", "handler threw");
-    store.setSnapshotValue("del-1", "follow_up_error", "send failed");
-    store.setSnapshotValue("del-1", "notification_error", "inbox full");
-    store.setSnapshotValue("del-1", "result", "partial output");
-
-    const app = {
-      session: vi.fn().mockResolvedValue({
-        snapshot: () => ({ timeline: [] }),
-      }),
-      receive: vi.fn(),
-      close: vi.fn(),
-    };
-    const tool = createInspectJobTool(app as any, store);
-    const result = await run(tool, { sessionId: "del-1" });
-    const t = text(result);
-
-    expect(t).toContain("Error: handler threw");
-    expect(t).toContain("Follow-up Error: send failed");
-    expect(t).toContain("Notification Error: inbox full");
-    expect(t).toContain("Result: partial output");
-    expect(t).toContain("Status: failed");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Session resolver — routes "session:*" messages to parent
-// ---------------------------------------------------------------------------
-
-describe("session resolver logic", () => {
-  it("resolves session:childId to parent_session_id", () => {
-    const store = freshStore();
-    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
-    store.initSession("del-1", {
-      parentSessionId: "owner-1",
-      sessionType: "delegation",
-      title: "Task",
-    });
-
-    // Simulate the resolver logic from app.ts
-    const resolve = (source: string): string | null => {
-      if (source.startsWith("session:")) {
-        const childId = source.slice(8);
-        const meta = store.getSessionMeta(childId);
-        if (meta?.parent_session_id) return meta.parent_session_id;
-      }
-      return null;
-    };
-
-    expect(resolve("session:del-1")).toBe("owner-1");
-  });
-
-  it("resolves supervised delegate through supervisor to owner", () => {
+  it("notify_parent completion targets parent directly", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
     store.initSession("sup-1", {
       parentSessionId: "owner-1",
       sessionType: "supervision",
-      title: "Supervised",
+      title: "Task",
+      status: "active",
     });
     store.initSession("del-1", {
       parentSessionId: "sup-1",
       sessionType: "delegation",
       title: "Delegate",
+      status: "active",
     });
 
-    const resolve = (source: string): string | null => {
-      if (source.startsWith("session:")) {
-        const childId = source.slice(8);
-        const meta = store.getSessionMeta(childId);
-        if (meta?.parent_session_id) return meta.parent_session_id;
-      }
-      return null;
-    };
+    const app = createMockApp([]);
+    const tool = createNotifyParentTool(app as any, store, "sup-1");
+    await run(tool, { type: "completion", message: "Done" });
 
-    // Supervisor notification routes to owner
-    expect(resolve("session:sup-1")).toBe("owner-1");
-    // Delegate notification routes to supervisor
-    expect(resolve("session:del-1")).toBe("sup-1");
-  });
-
-  it("returns null for non-session sources", () => {
-    const store = freshStore();
-
-    const resolve = (source: string): string | null => {
-      if (source.startsWith("session:")) {
-        const childId = source.slice(8);
-        const meta = store.getSessionMeta(childId);
-        if (meta?.parent_session_id) return meta.parent_session_id;
-      }
-      return null;
-    };
-
-    expect(resolve("user:bob")).toBeNull();
-    expect(resolve("webhook:123")).toBeNull();
-  });
-
-  it("returns null for session without parent", () => {
-    const store = freshStore();
-    store.initSession("root", { sessionType: "chat", title: "Root" });
-
-    const resolve = (source: string): string | null => {
-      if (source.startsWith("session:")) {
-        const childId = source.slice(8);
-        const meta = store.getSessionMeta(childId);
-        if (meta?.parent_session_id) return meta.parent_session_id;
-      }
-      return null;
-    };
-
-    expect(resolve("session:root")).toBeNull();
-  });
-
-  it("returns null for nonexistent session", () => {
-    const store = freshStore();
-
-    const resolve = (source: string): string | null => {
-      if (source.startsWith("session:")) {
-        const childId = source.slice(8);
-        const meta = store.getSessionMeta(childId);
-        if (meta?.parent_session_id) return meta.parent_session_id;
-      }
-      return null;
-    };
-
-    expect(resolve("session:ghost")).toBeNull();
+    expect(app.receivedMessages).toHaveLength(1);
+    expect(app.receivedMessages[0].targetSessionId).toBe("owner-1");
+    expect(app.receivedMessages[0].source).toBe("delegation");
   });
 });
