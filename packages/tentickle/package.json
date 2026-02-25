@@ -45,9 +45,9 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "start": "node --env-file=../../.env --import tsx bin/tentickle.js",
-    "start:coding": "node --env-file=../../.env --import tsx bin/tentickle.js --agent coding",
-    "start:main": "node --env-file=../../.env --import tsx bin/tentickle.js --agent main",
+    "start": "TSX_TSCONFIG_PATH=../../tsconfig.json node --env-file=../../.env --import tsx bin/tentickle.js",
+    "start:coding": "TSX_TSCONFIG_PATH=../../tsconfig.json node --env-file=../../.env --import tsx bin/tentickle.js --agent coding",
+    "start:main": "TSX_TSCONFIG_PATH=../../tsconfig.json node --env-file=../../.env --import tsx bin/tentickle.js --agent main",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo",

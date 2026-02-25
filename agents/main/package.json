@@ -35,8 +35,8 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "start": "node --env-file=../../.env --import tsx bin/tentickle-main.ts",
-    "dev": "node --env-file=../../.env --import tsx --watch bin/tentickle-main.ts",
+    "start": "TSX_TSCONFIG_PATH=../../tsconfig.json node --env-file=../../.env --import tsx bin/tentickle-main.ts",
+    "dev": "TSX_TSCONFIG_PATH=../../tsconfig.json node --env-file=../../.env --import tsx --watch bin/tentickle-main.ts",
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
