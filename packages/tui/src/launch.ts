@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createClient, createWSTransport } from "@agentick/client";
@@ -95,6 +96,8 @@ export interface GatewayLaunchOptions {
   plugins?: GatewayPlugin[];
   /** Remote daemon URL (ws://). Takes precedence over TENTICKLE_DAEMON_URL env var. */
   daemonUrl?: string;
+  /** Session ID. Fresh UUID by default; pass an ID to resume a session. */
+  sessionId?: string;
 }
 
 export async function launchGateway(options: GatewayLaunchOptions): Promise<void> {
@@ -105,6 +108,7 @@ export async function launchGateway(options: GatewayLaunchOptions): Promise<void
     devTools = true,
     plugins,
     daemonUrl,
+    sessionId = randomUUID(),
   } = options;
 
   normalizeToGitRoot();
@@ -120,7 +124,7 @@ export async function launchGateway(options: GatewayLaunchOptions): Promise<void
     const label = remoteUrl ?? getSocketPath();
     console.log(`Connected to daemon via ${label}`);
     const client = createClient({ baseUrl: remoteUrl ?? "unix://", transport: daemonTransport });
-    const tui = createTUI({ client, sessionId: "tui", ui: TentickleTUI });
+    const tui = createTUI({ client, sessionId, ui: TentickleTUI });
     try {
       await tui.start();
     } finally {
@@ -178,7 +182,7 @@ export async function launchGateway(options: GatewayLaunchOptions): Promise<void
   // TUI session: unqualified key routes to defaultAgent via gateway
   const tui = createTUI({
     client,
-    sessionId: "tui",
+    sessionId,
     ui: TentickleTUI,
   });
 

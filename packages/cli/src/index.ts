@@ -26,6 +26,7 @@ export function run(argv = process.argv): void {
     .option("--max-ticks <n>", "maximum model calls per execution", "250")
     .option("--no-devtools", "disable devtools server")
     .option("--url <ws-url>", "connect to remote daemon (ws://host:port)")
+    .option("--session <id>", "resume a specific session (default: new session)")
     .action(async (opts) => {
       if (!AGENTS[opts.agent]) {
         console.error(`Unknown agent: ${opts.agent}\nAvailable: ${Object.keys(AGENTS).join(", ")}`);
@@ -59,6 +60,7 @@ export function run(argv = process.argv): void {
         devTools: opts.devtools,
         plugins,
         daemonUrl: opts.url,
+        sessionId: opts.session,
       });
     });
 
