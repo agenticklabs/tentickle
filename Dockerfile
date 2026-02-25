@@ -54,5 +54,5 @@ COPY --from=build /app /app
 ENV NODE_ENV=production
 EXPOSE 18789
 
-ENTRYPOINT ["node", "packages/tentickle/bin/tentickle.js"]
+ENTRYPOINT ["node", "/app/packages/tentickle/bin/tentickle.js"]
 CMD ["start", "--foreground", "--port", "18789"]

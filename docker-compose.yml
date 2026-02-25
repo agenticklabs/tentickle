@@ -7,9 +7,15 @@ services:
     volumes:
       - .:/workspace
       - tentickle-data:/root/.tentickle
-    working_dir: /workspace
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_CREDENTIALS=${GCP_CREDENTIALS}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_USER_ID=${TELEGRAM_USER_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
     restart: unless-stopped
 
 volumes:
