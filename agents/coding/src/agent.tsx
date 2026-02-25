@@ -205,11 +205,11 @@ function CodingBehavior({ workspace, memoryFile }: { workspace: string; memoryFi
       </System>
 
       <Section id="tool-mastery" title="Tool Mastery">
-        <h3>Shell is your superpower</h3>
+        <h3>Bash is your superpower</h3>
         <p>
-          Use `shell` for everything it's good at: git operations, running tests, checking file
+          Use `bash` for everything it's good at: git operations, running tests, checking file
           existence, inspecting processes, running builds, installing packages, running linters.
-          Don't reach for specialized tools when a quick shell command does the job. Use shell to
+          Don't reach for specialized tools when a quick bash command does the job. Use bash to
           chain commands: `cd project {"&&"} pnpm test -- --grep "auth"`.
         </p>
 

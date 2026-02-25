@@ -93,7 +93,7 @@ describe("hasMultimodal", () => {
   });
 
   it("returns false for tool_use blocks (not media)", () => {
-    expect(hasMultimodal(msg("assistant", [TOOL_USE("shell")]))).toBe(false);
+    expect(hasMultimodal(msg("assistant", [TOOL_USE("bash")]))).toBe(false);
   });
 
   it("returns true when mixed text + media", () => {
@@ -161,7 +161,7 @@ describe("userMultimodalSummary", () => {
 
   it("does NOT include tool_use in media summary", () => {
     const result = userMultimodalSummary(
-      msg("user", [TEXT_BLOCK("run this"), TOOL_USE("shell"), IMAGE_BLOCK]),
+      msg("user", [TEXT_BLOCK("run this"), TOOL_USE("bash"), IMAGE_BLOCK]),
     );
     expect(result).not.toContain("tool_use");
     expect(result).not.toContain("shell");
@@ -257,7 +257,7 @@ describe("collapse strategy contracts", () => {
     it("assistant with tool_use: hasMultimodal is false", () => {
       const m = msg("assistant", [
         TEXT_BLOCK("Let me check"),
-        TOOL_USE("shell"),
+        TOOL_USE("bash"),
         TOOL_USE("read_file"),
       ]);
       expect(hasMultimodal(m)).toBe(false);
