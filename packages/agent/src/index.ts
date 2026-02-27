@@ -48,6 +48,12 @@ export {
   createSessionsTool,
   createRunVerificationTool,
 } from "./tools/delegate.js";
+export {
+  createKernelDelegateTool,
+  createWorkersTool,
+  createCancelTool,
+  createSendWorkerTool,
+} from "./tools/kernel.js";
 export { AddDirCommand } from "./tools/add-dir.js";
 
 // Path helpers
@@ -120,3 +126,4 @@ export type { ConnectorHandle } from "./connectors.js";
 
 // Utilities
 export { fileAge } from "./utils.js";
+export { pipeConfirmations } from "./utils/pipe-confirmations.js";
