@@ -7,6 +7,7 @@ WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/tentickle/package.json packages/tentickle/
 COPY packages/agent/package.json packages/agent/
+COPY packages/artifacts/package.json packages/artifacts/
 COPY packages/storage/package.json packages/storage/
 COPY packages/memory/package.json packages/memory/
 COPY packages/tools/package.json packages/tools/
@@ -32,8 +33,8 @@ RUN pnpm build
 # Apply publishConfig, strip source files
 RUN node -e "\
   const fs=require('fs'),{join}=require('path');\
-  const dirs=['packages/tentickle','packages/agent','packages/storage',\
-    'packages/memory','packages/tools','packages/cli','packages/tui',\
+  const dirs=['packages/tentickle','packages/agent','packages/artifacts',\
+    'packages/storage','packages/memory','packages/tools','packages/cli','packages/tui',\
     'agents/main','agents/coding'];\
   for(const d of dirs){\
     const f=join(d,'package.json');\

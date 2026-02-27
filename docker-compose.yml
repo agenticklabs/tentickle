@@ -4,6 +4,7 @@ services:
     container_name: tentickle
     ports:
       - "18789:18789"
+      - "3001:3001"
     volumes:
       - .:/workspace
       - tentickle-data:/root/.tentickle

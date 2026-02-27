@@ -270,7 +270,11 @@ async function handleSupervised(
   const unpipeConfirmDelegate = pipeConfirmations(delegateSession, ownerSession);
   const unpipeConfirmSupervisor = pipeConfirmations(supervisorSession, ownerSession);
   // Both supervisor and delegate tool events route through the supervisor spawn node
-  const unpipeToolsSupervisor = pipeToolEvents(supervisorSession, ownerSession, supervisorSession.id);
+  const unpipeToolsSupervisor = pipeToolEvents(
+    supervisorSession,
+    ownerSession,
+    supervisorSession.id,
+  );
   const unpipeToolsDelegate = pipeToolEvents(delegateSession, ownerSession, supervisorSession.id);
 
   store.initSession(supervisorSession.id, {
