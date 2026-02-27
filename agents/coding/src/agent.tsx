@@ -154,7 +154,10 @@ function SupervisorMode({
   const app = getApp();
   const store = getSessionStore();
 
-  const SendTool = useMemo(() => (app ? createSendSessionTool(app) : null), [app]);
+  const SendTool = useMemo(
+    () => (app && store ? createSendSessionTool(app, store, delegation.sessionId) : null),
+    [app, store, delegation.sessionId],
+  );
   const NotifyTool = useMemo(
     () => (app && store ? createNotifyParentTool(app, store, delegation.sessionId) : null),
     [app, store, delegation.sessionId],

@@ -78,7 +78,7 @@ function text(result: any): string {
 describe("createWorkersTool", () => {
   const OWNER = "shell-1";
 
-  it("filter=mine returns only workers spawned by the owner", async () => {
+  it("returns only workers owned by this session", async () => {
     const app = mockApp([
       workerSession("w-1", OWNER, "fix bug"),
       workerSession("w-2", "other-shell", "other task"),
@@ -86,50 +86,50 @@ describe("createWorkersTool", () => {
     ]);
 
     const tool = createWorkersTool(app, OWNER);
-    const result = await run(tool, { filter: "mine" });
+    const result = await run(tool, {});
 
     expect(text(result)).toContain("fix bug");
     expect(text(result)).not.toContain("other task");
   });
 
-  it("filter=all returns every worker regardless of origin", async () => {
-    const app = mockApp([
-      workerSession("w-1", OWNER, "fix bug"),
-      workerSession("w-2", "other-shell", "refactor utils"),
-    ]);
-
-    const tool = createWorkersTool(app, OWNER);
-    const result = await run(tool, { filter: "all" });
-    const output = text(result);
-
-    expect(output).toContain("fix bug");
-    expect(output).toContain("refactor utils");
-  });
-
-  it("filter=active excludes closed workers", async () => {
+  it("excludes closed workers by default", async () => {
     const app = mockApp([
       workerSession("w-1", OWNER, "still running", "running"),
       workerSession("w-2", OWNER, "already done", "closed"),
     ]);
 
     const tool = createWorkersTool(app, OWNER);
-    const result = await run(tool, { filter: "active" });
+    const result = await run(tool, {});
     const output = text(result);
 
     expect(output).toContain("still running");
     expect(output).not.toContain("already done");
   });
 
+  it("includeCompleted=true shows closed workers", async () => {
+    const app = mockApp([
+      workerSession("w-1", OWNER, "still running", "running"),
+      workerSession("w-2", OWNER, "already done", "closed"),
+    ]);
+
+    const tool = createWorkersTool(app, OWNER);
+    const result = await run(tool, { includeCompleted: true });
+    const output = text(result);
+
+    expect(output).toContain("still running");
+    expect(output).toContain("already done");
+  });
+
   it("returns 'No workers found.' when no workers match", async () => {
     const app = mockApp([shellSession(OWNER)]);
 
     const tool = createWorkersTool(app, OWNER);
-    const result = await run(tool, { filter: "mine" });
+    const result = await run(tool, {});
 
     expect(text(result)).toBe("No workers found.");
   });
 
-  it("excludes non-worker sessions from all filters", async () => {
+  it("excludes non-worker sessions", async () => {
     const app = mockApp([
       shellSession(OWNER),
       shellSession("shell-2"),
@@ -137,15 +137,23 @@ describe("createWorkersTool", () => {
     ]);
 
     const tool = createWorkersTool(app, OWNER);
+    const output = text(await run(tool, {}));
 
-    const mine = text(await run(tool, { filter: "mine" }));
-    const all = text(await run(tool, { filter: "all" }));
-    const active = text(await run(tool, { filter: "active" }));
+    expect(output).not.toContain("shell");
+    expect(output).toContain("only worker");
+  });
 
-    for (const output of [mine, all, active]) {
-      expect(output).not.toContain("shell");
-      expect(output).toContain("only worker");
-    }
+  it("does not expose workers from other sessions", async () => {
+    const app = mockApp([
+      workerSession("w-1", "other-shell", "secret task"),
+      workerSession("w-2", "other-shell", "hidden task", "closed"),
+    ]);
+
+    const tool = createWorkersTool(app, OWNER);
+
+    // Neither default nor includeCompleted should reveal other sessions' workers
+    expect(text(await run(tool, {}))).toBe("No workers found.");
+    expect(text(await run(tool, { includeCompleted: true }))).toBe("No workers found.");
   });
 
   it("truncates session IDs to first 8 characters", async () => {
@@ -153,7 +161,7 @@ describe("createWorkersTool", () => {
     const app = mockApp([workerSession(longId, OWNER, "task")]);
 
     const tool = createWorkersTool(app, OWNER);
-    const result = await run(tool, { filter: "mine" });
+    const result = await run(tool, {});
     const output = text(result);
 
     expect(output).toContain("[abcdef12]");
@@ -166,9 +174,11 @@ describe("createWorkersTool", () => {
 // ---------------------------------------------------------------------------
 
 describe("createCancelTool", () => {
+  const OWNER = "shell-1";
+
   it("cancels a worker session via app.close", async () => {
-    const app = mockApp([workerSession("w-1", "shell-1", "task")]);
-    const tool = createCancelTool(app);
+    const app = mockApp([workerSession("w-1", OWNER, "task")]);
+    const tool = createCancelTool(app, OWNER);
 
     const result = await run(tool, { workerId: "w-1" });
 
@@ -178,7 +188,7 @@ describe("createCancelTool", () => {
 
   it("returns error for unknown session ID", async () => {
     const app = mockApp([]);
-    const tool = createCancelTool(app);
+    const tool = createCancelTool(app, OWNER);
 
     const result = await run(tool, { workerId: "nonexistent" });
 
@@ -188,11 +198,21 @@ describe("createCancelTool", () => {
 
   it("rejects cancellation of non-worker sessions", async () => {
     const app = mockApp([shellSession("shell-1")]);
-    const tool = createCancelTool(app);
+    const tool = createCancelTool(app, OWNER);
 
     const result = await run(tool, { workerId: "shell-1" });
 
     expect(text(result)).toContain("not a worker");
+    expect(app.close).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancellation of worker owned by different session", async () => {
+    const app = mockApp([workerSession("w-1", "other-shell", "task")]);
+    const tool = createCancelTool(app, OWNER);
+
+    const result = await run(tool, { workerId: "w-1" });
+
+    expect(text(result)).toContain("not owned by this session");
     expect(app.close).not.toHaveBeenCalled();
   });
 });
@@ -202,9 +222,11 @@ describe("createCancelTool", () => {
 // ---------------------------------------------------------------------------
 
 describe("createSendWorkerTool", () => {
-  it("sends a message to a worker via app.receive", async () => {
-    const app = mockApp([workerSession("w-1", "shell-1", "task")]);
-    const tool = createSendWorkerTool(app);
+  const OWNER = "shell-1";
+
+  it("sends a role:user message to a worker via app.receive", async () => {
+    const app = mockApp([workerSession("w-1", OWNER, "task")]);
+    const tool = createSendWorkerTool(app, OWNER);
 
     const result = await run(tool, {
       workerId: "w-1",
@@ -229,7 +251,7 @@ describe("createSendWorkerTool", () => {
 
   it("returns error for unknown session ID", async () => {
     const app = mockApp([]);
-    const tool = createSendWorkerTool(app);
+    const tool = createSendWorkerTool(app, OWNER);
 
     const result = await run(tool, {
       workerId: "ghost",
@@ -242,7 +264,7 @@ describe("createSendWorkerTool", () => {
 
   it("rejects sending to non-worker sessions", async () => {
     const app = mockApp([shellSession("shell-1")]);
-    const tool = createSendWorkerTool(app);
+    const tool = createSendWorkerTool(app, OWNER);
 
     const result = await run(tool, {
       workerId: "shell-1",
@@ -250,6 +272,19 @@ describe("createSendWorkerTool", () => {
     });
 
     expect(text(result)).toContain("not a worker");
+    expect(app.receive).not.toHaveBeenCalled();
+  });
+
+  it("rejects sending to worker owned by different session", async () => {
+    const app = mockApp([workerSession("w-1", "other-shell", "task")]);
+    const tool = createSendWorkerTool(app, OWNER);
+
+    const result = await run(tool, {
+      workerId: "w-1",
+      message: "hello",
+    });
+
+    expect(text(result)).toContain("not owned by this session");
     expect(app.receive).not.toHaveBeenCalled();
   });
 });
@@ -358,13 +393,12 @@ describe("createKernelDelegateTool", () => {
     });
   });
 
-  it("delivers completion notification to owner on success", async () => {
+  it("delivers completion notification with role:event and eventType", async () => {
     const { app } = createDelegateMocks({ response: "all green" });
     const tool = createKernelDelegateTool(app, OWNER_ID);
 
     await run(tool, { task: "test run", spec: "run it" });
 
-    // Wait for the async .then() to fire
     await vi.waitFor(() => {
       expect(app.receive).toHaveBeenCalledWith(
         OWNER_ID,
@@ -372,6 +406,8 @@ describe("createKernelDelegateTool", () => {
           source: "worker",
           type: "message",
           payload: expect.objectContaining({
+            role: "event",
+            eventType: "worker_completion",
             content: expect.arrayContaining([
               expect.objectContaining({
                 text: expect.stringContaining("[Worker Complete]"),
@@ -383,7 +419,7 @@ describe("createKernelDelegateTool", () => {
     });
   });
 
-  it("delivers failure notification to owner on error", async () => {
+  it("delivers failure notification with role:event and eventType", async () => {
     const { app } = createDelegateMocks(new Error("segfault"));
     const tool = createKernelDelegateTool(app, OWNER_ID);
 
@@ -396,6 +432,8 @@ describe("createKernelDelegateTool", () => {
           source: "worker",
           type: "message",
           payload: expect.objectContaining({
+            role: "event",
+            eventType: "worker_failure",
             content: expect.arrayContaining([
               expect.objectContaining({
                 text: expect.stringContaining("[Worker Failed]"),

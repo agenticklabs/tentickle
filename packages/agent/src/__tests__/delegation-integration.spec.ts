@@ -415,12 +415,20 @@ describe("delegate: supervised", () => {
 // ===========================================================================
 
 describe("send_session", () => {
-  it("sends message and returns response", async () => {
+  it("sends message to owned child and returns response", async () => {
+    const store = freshStore();
+    store.initSession("sup-1", { sessionType: "supervision", title: "Supervisor" });
+    store.initSession("del-1", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Task",
+    });
+
     const delegateSession = createImmediateSession("del-1", {
       response: "Fixed the auth module. All tests pass.",
     });
     const app = createMockApp([delegateSession]);
-    const tool = createSendSessionTool(app as any);
+    const tool = createSendSessionTool(app as any, store, "sup-1");
 
     const result = await run(tool, { sessionId: "del-1", message: "Fix the auth module" });
 
@@ -428,7 +436,7 @@ describe("send_session", () => {
     expect(delegateSession.send).toHaveBeenCalledOnce();
   });
 
-  it("sends to any session by ID (follow-up replacement)", async () => {
+  it("rejects sending to session not owned by caller", async () => {
     const store = freshStore();
     store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
     store.initSession("del-1", {
@@ -439,13 +447,30 @@ describe("send_session", () => {
 
     const session = createImmediateSession("del-1", { response: "Got it" });
     const app = createMockApp([session]);
-    const tool = createSendSessionTool(app as any);
+    const tool = createSendSessionTool(app as any, store, "other-owner");
 
     const result = await run(tool, { sessionId: "del-1", message: "Priority change!" });
-    expect(text(result)).toBe("Got it");
+    expect(text(result)).toContain("not owned by this session");
+  });
+
+  it("returns error for unknown session", async () => {
+    const store = freshStore();
+    const app = createMockApp([]);
+    const tool = createSendSessionTool(app as any, store, "owner-1");
+
+    const result = await run(tool, { sessionId: "nonexistent", message: "Hello" });
+    expect(text(result)).toContain("not found");
   });
 
   it("propagates error when session send fails", async () => {
+    const store = freshStore();
+    store.initSession("sup-1", { sessionType: "supervision", title: "Supervisor" });
+    store.initSession("del-1", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Task",
+    });
+
     const failResult = Promise.reject(new Error("session overloaded"));
     failResult.catch(() => {});
     const failSession = {
@@ -455,7 +480,7 @@ describe("send_session", () => {
       }),
     } as any;
     const app = createMockApp([failSession]);
-    const tool = createSendSessionTool(app as any);
+    const tool = createSendSessionTool(app as any, store, "sup-1");
 
     await expect(run(tool, { sessionId: "del-1", message: "Hello" })).rejects.toThrow(
       "session overloaded",
@@ -670,12 +695,12 @@ describe("sessions: inspect", () => {
     expect(t).toContain("[user] Fix it");
   });
 
-  it("handles non-existent session", async () => {
+  it("rejects non-existent session as not owned", async () => {
     const app = createMockApp([]);
     const tool = createSessionsTool(app as any, store, "owner-1");
 
     const result = await run(tool, { action: "inspect", sessionId: "nope" });
-    expect(text(result)).toContain("not found");
+    expect(text(result)).toContain("not owned by this session");
   });
 
   it("handles unavailable timeline gracefully", async () => {
@@ -846,6 +871,73 @@ describe("sessions: close", () => {
     expect(app.closedSessions).toContain("sup-1");
     expect(app.closedSessions).toContain("del-a");
     expect(app.closedSessions).toContain("del-b");
+  });
+});
+
+// ===========================================================================
+// Ownership guards on sessions close/inspect
+// ===========================================================================
+
+describe("sessions: ownership", () => {
+  it("rejects close on session not owned by caller", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner 1" });
+    store.initSession("owner-2", { sessionType: "chat", title: "Owner 2" });
+    store.initSession("del-1", {
+      parentSessionId: "owner-2",
+      sessionType: "delegation",
+      title: "Not yours",
+      status: "active",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "close", sessionId: "del-1" });
+
+    expect(text(result)).toContain("not owned by this session");
+    expect(app.closedSessions).toHaveLength(0);
+  });
+
+  it("rejects inspect on session not owned by caller", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner 1" });
+    store.initSession("owner-2", { sessionType: "chat", title: "Owner 2" });
+    store.initSession("del-1", {
+      parentSessionId: "owner-2",
+      sessionType: "delegation",
+      title: "Secret task",
+      status: "active",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "inspect", sessionId: "del-1" });
+
+    expect(text(result)).toContain("not owned by this session");
+  });
+
+  it("allows close on grandchild session (owner → supervisor → delegate)", async () => {
+    const store = freshStore();
+    store.initSession("owner-1", { sessionType: "chat", title: "Owner" });
+    store.initSession("sup-1", {
+      parentSessionId: "owner-1",
+      sessionType: "supervision",
+      title: "Supervisor",
+      status: "active",
+    });
+    store.initSession("del-1", {
+      parentSessionId: "sup-1",
+      sessionType: "delegation",
+      title: "Delegate",
+      status: "active",
+    });
+
+    const app = createMockApp([]);
+    const tool = createSessionsTool(app as any, store, "owner-1");
+    const result = await run(tool, { action: "close", sessionId: "del-1" });
+
+    expect(text(result)).toContain("completed");
+    expect(app.closedSessions).toContain("del-1");
   });
 });
 
@@ -1089,7 +1181,7 @@ describe("supervisor review loop", () => {
     } as any;
     const app = createMockApp([delegateSession]);
 
-    const sendTool = createSendSessionTool(app as any);
+    const sendTool = createSendSessionTool(app as any, store, "sup-1");
     const sessionsTool = createSessionsTool(app as any, store, "sup-1");
     const notifyTool = createNotifyParentTool(app as any, store, "sup-1");
 
@@ -1129,7 +1221,7 @@ describe("supervisor review loop", () => {
     });
     const app = createMockApp([delegateSession]);
 
-    const sendTool = createSendSessionTool(app as any);
+    const sendTool = createSendSessionTool(app as any, store, "sup-1");
     const notifyTool = createNotifyParentTool(app as any, store, "sup-1");
 
     // Send to delegate, get back a hopeless response

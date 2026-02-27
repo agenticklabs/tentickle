@@ -1,5 +1,6 @@
 import { createTool } from "@agentick/core";
 import type { App, InboxMessageInput, ToolClass } from "@agentick/core";
+import { createEventMessage } from "@agentick/shared";
 import { z } from "zod";
 import { pipeConfirmations } from "../utils/pipe-confirmations.js";
 import { getArtifactStore } from "@tentickle/artifacts";
@@ -9,6 +10,14 @@ function inboxMessage(source: string, text: string): InboxMessageInput {
     source,
     type: "message",
     payload: { role: "user", content: [{ type: "text", text }] },
+  };
+}
+
+function eventInboxMessage(source: string, text: string, eventType: string): InboxMessageInput {
+  return {
+    source,
+    type: "message",
+    payload: createEventMessage(text, eventType),
   };
 }
 
@@ -61,9 +70,10 @@ You remain available for other work while workers run in background sessions.`,
           app
             .receive(
               ownerSessionId,
-              inboxMessage(
+              eventInboxMessage(
                 "worker",
                 `[Worker Complete] "${input.task}"\n\nResult: ${result.response.slice(0, 2000)}${artifactLines}`,
+                "worker_completion",
               ),
             )
             .catch(() => {});
@@ -74,7 +84,11 @@ You remain available for other work while workers run in background sessions.`,
           app
             .receive(
               ownerSessionId,
-              inboxMessage("worker", `[Worker Failed] "${input.task}"\n\nError: ${msg}`),
+              eventInboxMessage(
+                "worker",
+                `[Worker Failed] "${input.task}"\n\nError: ${msg}`,
+                "worker_failure",
+              ),
             )
             .catch(() => {});
         },
@@ -92,28 +106,17 @@ You remain available for other work while workers run in background sessions.`,
 export function createWorkersTool(app: App, ownerSessionId: string): ToolClass {
   return createTool({
     name: "workers",
-    description: "List worker sessions. Defaults to your own workers.",
+    description: "List your worker sessions.",
     input: z.object({
-      filter: z
-        .enum(["all", "active", "mine"])
-        .default("mine")
-        .describe("all = every worker, active = non-terminal workers, mine = workers I spawned"),
+      includeCompleted: z.boolean().default(false).describe("Include closed/completed workers"),
     }),
     handler: async (input) => {
       const workers = app.sessions
         .map((id) => app.getSession(id))
         .filter((s): s is NonNullable<typeof s> => s != null)
         .filter((s) => s.metadata?.type === "worker")
-        .filter((s) => {
-          switch (input.filter) {
-            case "all":
-              return true;
-            case "active":
-              return s.status !== "closed";
-            case "mine":
-              return s.metadata?.origin === ownerSessionId;
-          }
-        });
+        .filter((s) => s.metadata?.origin === ownerSessionId)
+        .filter((s) => input.includeCompleted || s.status !== "closed");
 
       if (workers.length === 0) {
         return textResult("No workers found.");
@@ -133,7 +136,7 @@ export function createWorkersTool(app: App, ownerSessionId: string): ToolClass {
 // cancel — abort a worker
 // ---------------------------------------------------------------------------
 
-export function createCancelTool(app: App): ToolClass {
+export function createCancelTool(app: App, ownerSessionId: string): ToolClass {
   return createTool({
     name: "cancel",
     description: "Cancel a running worker session.",
@@ -148,6 +151,9 @@ export function createCancelTool(app: App): ToolClass {
       if (session.metadata?.type !== "worker") {
         return textResult(`Session ${input.workerId} is not a worker.`);
       }
+      if (session.metadata?.origin !== ownerSessionId) {
+        return textResult(`Worker ${input.workerId} is not owned by this session.`);
+      }
       await app.close(input.workerId);
       return textResult(`Worker ${input.workerId} cancelled.`);
     },
@@ -158,7 +164,7 @@ export function createCancelTool(app: App): ToolClass {
 // send_worker — send a message to a running worker
 // ---------------------------------------------------------------------------
 
-export function createSendWorkerTool(app: App): ToolClass {
+export function createSendWorkerTool(app: App, ownerSessionId: string): ToolClass {
   return createTool({
     name: "send_worker",
     description: "Send instructions to a running worker session.",
@@ -173,6 +179,9 @@ export function createSendWorkerTool(app: App): ToolClass {
       }
       if (session.metadata?.type !== "worker") {
         return textResult(`Session ${input.workerId} is not a worker.`);
+      }
+      if (session.metadata?.origin !== ownerSessionId) {
+        return textResult(`Worker ${input.workerId} is not owned by this session.`);
       }
       await app.receive(input.workerId, inboxMessage("shell", input.message));
       return textResult(`Message sent to worker ${input.workerId}.`);

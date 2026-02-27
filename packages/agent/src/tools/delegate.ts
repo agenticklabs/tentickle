@@ -1,7 +1,7 @@
 import { createTool } from "@agentick/core";
 import type { App, InboxMessageInput, Session, ToolClass } from "@agentick/core";
 import type { ToolConfirmationRequiredEvent, ChannelEvent } from "@agentick/shared";
-import { extractText } from "@agentick/shared";
+import { createEventMessage, extractText } from "@agentick/shared";
 import type { TentickleSessionStore } from "@tentickle/storage";
 import { z } from "zod";
 
@@ -46,12 +46,24 @@ function textResult(text: string) {
   return [{ type: "text" as const, text }];
 }
 
-function inboxMessage(source: string, text: string): InboxMessageInput {
+function eventInboxMessage(source: string, text: string, eventType: string): InboxMessageInput {
   return {
     source,
     type: "message",
-    payload: { role: "user", content: [{ type: "text", text }] },
+    payload: createEventMessage(text, eventType),
   };
+}
+
+function isOwnedBy(store: TentickleSessionStore, sessionId: string, ownerId: string): boolean {
+  const maxDepth = 10;
+  let current = sessionId;
+  for (let i = 0; i < maxDepth; i++) {
+    const meta = store.getSessionMeta(current);
+    if (!meta?.parent_session_id) return false;
+    if (meta.parent_session_id === ownerId) return true;
+    current = meta.parent_session_id;
+  }
+  return false;
 }
 
 async function closeChildren(
@@ -113,9 +125,10 @@ function settleDelegation(opts: {
       app
         .receive(
           ownerSessionId,
-          inboxMessage(
+          eventInboxMessage(
             "delegation",
             `[Delegation Complete] "${description}"\n\nResult: ${result.response}`,
+            "delegation_completion",
           ),
         )
         .catch((err: unknown) => {
@@ -133,7 +146,11 @@ function settleDelegation(opts: {
       app
         .receive(
           ownerSessionId,
-          inboxMessage("delegation", `[Delegation Failed] "${description}"\n\nError: ${msg}`),
+          eventInboxMessage(
+            "delegation",
+            `[Delegation Failed] "${description}"\n\nError: ${msg}`,
+            "delegation_failure",
+          ),
         )
         .catch((err: unknown) => {
           store.setSnapshotValue(sessionId, "notification_error", errorMsg(err));
@@ -329,17 +346,28 @@ You remain available for other work while delegations run in background.`,
 // 2. send_session — blocking message to any session
 // ---------------------------------------------------------------------------
 
-export function createSendSessionTool(app: App): ToolClass {
+export function createSendSessionTool(
+  app: App,
+  store: TentickleSessionStore,
+  ownerSessionId: string,
+): ToolClass {
   return createTool({
     name: "send_session",
     description:
-      "Send a message to a session and wait for the response. The target agent processes your message and you receive its response.",
+      "Send a message to a child session and wait for the response. The target agent processes your message and you receive its response.",
     displaySummary: (input) => input.message.slice(0, 60),
     input: z.object({
       sessionId: z.string().describe("Target session ID"),
       message: z.string().describe("The message to send"),
     }),
     handler: async ({ sessionId, message }) => {
+      const meta = store.getSessionMeta(sessionId);
+      if (!meta) {
+        return textResult(`Session ${sessionId} not found.`);
+      }
+      if (meta.parent_session_id !== ownerSessionId) {
+        return textResult(`Session ${sessionId} is not owned by this session.`);
+      }
       const session = await app.session(sessionId);
       const result = await session.send({
         messages: [{ role: "user", content: [{ type: "text", text: message }] }],
@@ -382,14 +410,22 @@ export function createNotifyParentTool(
 
         await app.receive(
           meta.parent_session_id,
-          inboxMessage("delegation", `[Delegation Complete] "${title}"\n\nSummary: ${message}`),
+          eventInboxMessage(
+            "delegation",
+            `[Delegation Complete] "${title}"\n\nSummary: ${message}`,
+            "delegation_completion",
+          ),
         );
         return textResult("Marked complete. Parent notified.");
       }
 
       await app.receive(
         meta.parent_session_id,
-        inboxMessage("escalation", `[Escalation] "${title}"\n\nReason: ${message}`),
+        eventInboxMessage(
+          "escalation",
+          `[Escalation] "${title}"\n\nReason: ${message}`,
+          "delegation_escalation",
+        ),
       );
       return textResult("Escalation sent to parent.");
     },
@@ -436,6 +472,10 @@ export function createSessionsTool(
 
       if (!sessionId) {
         return textResult("Error: sessionId required");
+      }
+
+      if (!isOwnedBy(store, sessionId, ownerSessionId)) {
+        return textResult(`Session ${sessionId} is not owned by this session.`);
       }
 
       if (action === "close") {
