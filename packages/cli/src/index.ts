@@ -84,9 +84,13 @@ export function run(argv = process.argv): void {
         await runDaemonProcess(
           socketPath,
           {
-            ...opts,
+            foreground: true,
+            agent: opts.agent,
             maxTicks: parseInt(opts.maxTicks, 10),
+            devTools: opts.devtools,
+            logFile: opts.logFile,
             port: opts.port ? parseInt(opts.port, 10) : undefined,
+            host: opts.host,
             configPath: opts.config,
           },
           AGENTS,

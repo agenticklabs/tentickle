@@ -39,7 +39,7 @@ extractable and testable. Naming should match the domain (wire format says
 `content`, so we say `content`). No "for now" compromises that become permanent.
 
 **Solve upstream.** Don't solve the problem you have — solve the problem that
-*causes* the problem you have. Follow the thread. A test that requires
+_causes_ the problem you have. Follow the thread. A test that requires
 specialized knowledge of an internal conversion is telling you the conversion
 is wrong. A consumer that needs an `as unknown as` cast is telling you the
 type boundary is leaking. A workaround that "happens to work" for current
