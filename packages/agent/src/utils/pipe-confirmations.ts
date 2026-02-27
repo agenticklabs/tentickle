@@ -25,3 +25,16 @@ export function pipeConfirmations(from: Session, to: Session): () => void {
     childCallIds.clear();
   };
 }
+
+const TOOL_EVENT_TYPES = new Set(["tool_call_start", "tool_call", "tool_result"]);
+
+/** Forward worker tool events to owner session so SessionTree can show per-tool activity. */
+export function pipeToolEvents(from: Session, to: Session, spawnId: string): () => void {
+  const onEvent = (event: { type: string; spawnPath?: string[] }) => {
+    if (TOOL_EVENT_TYPES.has(event.type)) {
+      to.pushEvent({ ...event, spawnPath: [spawnId, ...(event.spawnPath ?? [])] });
+    }
+  };
+  from.on("event", onEvent);
+  return () => from.removeListener("event", onEvent);
+}

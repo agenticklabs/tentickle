@@ -4,6 +4,7 @@ import type { ToolConfirmationRequiredEvent, ChannelEvent } from "@agentick/shar
 import { createEventMessage, extractText } from "@agentick/shared";
 import type { TentickleSessionStore } from "@tentickle/storage";
 import { z } from "zod";
+import { pipeToolEvents } from "../utils/pipe-confirmations.js";
 
 // ---------------------------------------------------------------------------
 // Confirmation routing — pipe confirmations between independent sessions
@@ -107,14 +108,33 @@ function settleDelegation(opts: {
   store: TentickleSessionStore;
   sessionId: string;
   ownerSessionId: string;
+  ownerSession: Session;
   description: string;
+  spawnId: string;
   extraSessionIds?: string[];
 }) {
-  const { unpipe, app, store, sessionId, ownerSessionId, description, extraSessionIds } = opts;
+  const {
+    unpipe,
+    app,
+    store,
+    sessionId,
+    ownerSessionId,
+    ownerSession,
+    description,
+    spawnId,
+    extraSessionIds,
+  } = opts;
 
   return {
     onSuccess(result: { response: string }) {
       unpipe();
+      ownerSession.pushEvent({
+        type: "spawn_end",
+        spawnId,
+        parentExecutionId: "delegation",
+        childExecutionId: spawnId,
+        output: null,
+      });
       const meta = store.getSessionMeta(sessionId);
       if (meta?.status !== "active") return;
       store.updateSessionMeta(sessionId, { status: "completed" });
@@ -137,6 +157,14 @@ function settleDelegation(opts: {
     },
     onError(error: unknown) {
       unpipe();
+      ownerSession.pushEvent({
+        type: "spawn_end",
+        spawnId,
+        parentExecutionId: "delegation",
+        childExecutionId: spawnId,
+        output: null,
+        isError: true,
+      });
       const msg = errorMsg(error);
       store.updateSessionMeta(sessionId, { status: "failed" });
       store.setSnapshotValue(sessionId, "error", msg);
@@ -172,7 +200,16 @@ async function handleDispatch(
 ): Promise<string> {
   const session = await app.session({ parentSessionId: ownerSessionId });
   const ownerSession = await app.session(ownerSessionId);
-  const unpipe = pipeConfirmations(session, ownerSession);
+  const unpipeConfirm = pipeConfirmations(session, ownerSession);
+  const unpipeTools = pipeToolEvents(session, ownerSession, session.id);
+
+  ownerSession.pushEvent({
+    type: "spawn_start",
+    spawnId: session.id,
+    parentExecutionId: "delegation",
+    childExecutionId: session.id,
+    label: description,
+  });
 
   store.initSession(session.id, {
     parentSessionId: ownerSessionId,
@@ -186,13 +223,20 @@ async function handleDispatch(
     messages: [{ role: "user", content: [{ type: "text", text: spec }] }],
   });
 
+  const unpipe = () => {
+    unpipeConfirm();
+    unpipeTools();
+  };
+
   const { onSuccess, onError } = settleDelegation({
     unpipe,
     app,
     store,
     sessionId: session.id,
     ownerSessionId,
+    ownerSession,
     description,
+    spawnId: session.id,
   });
   handle.result.then(onSuccess, onError);
 
@@ -215,8 +259,19 @@ async function handleSupervised(
   const delegateSession = await app.session({ parentSessionId: supervisorSession.id });
   const ownerSession = await app.session(ownerSessionId);
 
-  const unpipeDelegate = pipeConfirmations(delegateSession, ownerSession);
-  const unpipeSupervisor = pipeConfirmations(supervisorSession, ownerSession);
+  ownerSession.pushEvent({
+    type: "spawn_start",
+    spawnId: supervisorSession.id,
+    parentExecutionId: "delegation",
+    childExecutionId: supervisorSession.id,
+    label: `[supervised] ${description}`,
+  });
+
+  const unpipeConfirmDelegate = pipeConfirmations(delegateSession, ownerSession);
+  const unpipeConfirmSupervisor = pipeConfirmations(supervisorSession, ownerSession);
+  // Both supervisor and delegate tool events route through the supervisor spawn node
+  const unpipeToolsSupervisor = pipeToolEvents(supervisorSession, ownerSession, supervisorSession.id);
+  const unpipeToolsDelegate = pipeToolEvents(delegateSession, ownerSession, supervisorSession.id);
 
   store.initSession(supervisorSession.id, {
     parentSessionId: ownerSessionId,
@@ -263,8 +318,10 @@ async function handleSupervised(
   });
 
   const unpipe = () => {
-    unpipeDelegate();
-    unpipeSupervisor();
+    unpipeConfirmDelegate();
+    unpipeConfirmSupervisor();
+    unpipeToolsSupervisor();
+    unpipeToolsDelegate();
   };
   const { onSuccess, onError } = settleDelegation({
     unpipe,
@@ -272,7 +329,9 @@ async function handleSupervised(
     store,
     sessionId: supervisorSession.id,
     ownerSessionId,
+    ownerSession,
     description,
+    spawnId: supervisorSession.id,
     extraSessionIds: [delegateSession.id],
   });
   handle.result.then(onSuccess, onError);
@@ -481,6 +540,8 @@ export function createSessionsTool(
       if (action === "close") {
         const finalStatus = status === "cancelled" ? "failed" : "completed";
         await closeTree(app, store, sessionId, finalStatus);
+        // TODO: emit spawn_end here so SessionTree shows closure immediately
+        // instead of waiting for handle.result rejection (which may not fire).
         if (reason) {
           store.setSnapshotValue(sessionId, status === "cancelled" ? "error" : "result", reason);
         }

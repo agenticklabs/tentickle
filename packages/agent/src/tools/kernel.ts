@@ -2,7 +2,7 @@ import { createTool } from "@agentick/core";
 import type { App, InboxMessageInput, ToolClass } from "@agentick/core";
 import { createEventMessage } from "@agentick/shared";
 import { z } from "zod";
-import { pipeConfirmations } from "../utils/pipe-confirmations.js";
+import { pipeConfirmations, pipeToolEvents } from "../utils/pipe-confirmations.js";
 import { getArtifactStore } from "@tentickle/artifacts";
 
 function inboxMessage(source: string, text: string): InboxMessageInput {
@@ -52,7 +52,21 @@ You remain available for other work while workers run in background sessions.`,
         },
       });
 
-      const unpipe = pipeConfirmations(session, ownerSession);
+      // Emit spawn_start so the TUI's SessionTree tracks this worker
+      ownerSession.pushEvent({
+        type: "spawn_start",
+        spawnId: session.id,
+        parentExecutionId: "kernel",
+        childExecutionId: session.id,
+        label: input.task,
+      });
+
+      const unpipeConfirm = pipeConfirmations(session, ownerSession);
+      const unpipeTools = pipeToolEvents(session, ownerSession, session.id);
+      const unpipe = () => {
+        unpipeConfirm();
+        unpipeTools();
+      };
 
       const handle = await session.send({
         messages: [{ role: "user", content: [{ type: "text", text: input.spec }] }],
@@ -61,6 +75,16 @@ You remain available for other work while workers run in background sessions.`,
       handle.result.then(
         (result) => {
           unpipe();
+
+          // Emit spawn_end so SessionTree shows completion
+          ownerSession.pushEvent({
+            type: "spawn_end",
+            spawnId: session.id,
+            parentExecutionId: "kernel",
+            childExecutionId: session.id,
+            output: null,
+          });
+
           const artifactStore = getArtifactStore();
           const produced = artifactStore?.list(session.id) ?? [];
           const artifactLines =
@@ -80,6 +104,17 @@ You remain available for other work while workers run in background sessions.`,
         },
         (error) => {
           unpipe();
+
+          // Emit spawn_end with error so SessionTree shows failure
+          ownerSession.pushEvent({
+            type: "spawn_end",
+            spawnId: session.id,
+            parentExecutionId: "kernel",
+            childExecutionId: session.id,
+            output: null,
+            isError: true,
+          });
+
           const msg = error instanceof Error ? error.message : String(error);
           app
             .receive(
@@ -155,6 +190,8 @@ export function createCancelTool(app: App, ownerSessionId: string): ToolClass {
         return textResult(`Worker ${input.workerId} is not owned by this session.`);
       }
       await app.close(input.workerId);
+      // TODO: emit spawn_end here so SessionTree shows cancellation immediately
+      // instead of waiting for handle.result rejection (which may not fire).
       return textResult(`Worker ${input.workerId} cancelled.`);
     },
   });
