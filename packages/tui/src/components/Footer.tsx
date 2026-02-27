@@ -8,6 +8,7 @@ import {
   BrandLabel,
   TokenCount,
   ContextUtilization,
+  CacheHealth,
   StateIndicator,
   useStatusBarData,
 } from "@agentick/tui";
@@ -52,6 +53,12 @@ function RightContent() {
           <>
             <Text> </Text>
             <ContextUtilization />
+          </>
+        )}
+        {ci?.cacheHitRatio != null && (
+          <>
+            <Text> </Text>
+            <CacheHealth />
           </>
         )}
       </Text>,
