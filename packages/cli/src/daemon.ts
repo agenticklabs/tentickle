@@ -137,7 +137,7 @@ export async function runDaemonProcess(
   const agentConfig = configStore.get("agent");
   const defaultAgent = opts.agent ?? agentConfig?.defaultAgent ?? "main";
   const maxTicks = opts.maxTicks ?? agentConfig?.maxTicks ?? 250;
-  const devTools = opts.devTools ?? false;
+  const devTools = opts.devTools ?? true;
 
   if (devTools) {
     const { startDevToolsServer } = await import("@agentick/devtools");
@@ -176,6 +176,10 @@ export async function runDaemonProcess(
       }),
     );
   }
+
+  // Dashboard plugin — always enabled
+  const { dashboardPlugin } = await import("./plugins/dashboard.js");
+  plugins.push(dashboardPlugin());
 
   // Create gateway — always Unix socket, optionally WebSocket on a port
   const gateway = createGateway({
@@ -270,7 +274,7 @@ function spawnBackground(socketPath: string, opts: DaemonOptions): void {
   const args = ["--daemon-child"];
   if (opts.agent) args.push("--agent", opts.agent);
   if (opts.maxTicks) args.push("--max-ticks", String(opts.maxTicks));
-  if (opts.devTools) args.push("--devtools");
+  if (opts.devTools === false) args.push("--no-devtools");
   if (opts.port) args.push("--port", String(opts.port));
   if (opts.host) args.push("--host", opts.host);
   if (opts.configPath) args.push("--config", opts.configPath);

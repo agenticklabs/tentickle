@@ -38,6 +38,16 @@ fix it. If a module boundary is awkward, redraw it. Pure functions should be
 extractable and testable. Naming should match the domain (wire format says
 `content`, so we say `content`). No "for now" compromises that become permanent.
 
+**Solve upstream.** Don't solve the problem you have — solve the problem that
+*causes* the problem you have. Follow the thread. A test that requires
+specialized knowledge of an internal conversion is telling you the conversion
+is wrong. A consumer that needs an `as unknown as` cast is telling you the
+type boundary is leaking. A workaround that "happens to work" for current
+callers is a bug waiting for a new caller. Fix the root, not the symptom. The
+right fix often has wider blast radius — that's a feature, not a reason to
+avoid it. Solve for architectural beauty and the problems you don't have yet
+disappear before you encounter them.
+
 **No backwards compatibility.** No legacy code. No dead code paths. No
 deprecations. If something is wrong, fix it. If something is unused, delete it.
 Clean, direct, well-crafted code only.
