@@ -13,7 +13,7 @@ import {
   InputBar,
   CompletionPicker,
   ToolCallIndicator,
-  SpawnIndicator,
+  SessionTree,
   Spinner,
   useSlashCommands,
   useCommandsConfig,
@@ -420,7 +420,7 @@ export function TentickleTUI({ sessionId, commands: extraCommands, children }: T
             <Text color="yellow">Thinking...</Text>
           </Box>
           <ToolCallIndicator sessionId={sessionId} />
-          <SpawnIndicator sessionId={sessionId} />
+          <SessionTree sessionId={sessionId} />
         </Box>
       )}
 
