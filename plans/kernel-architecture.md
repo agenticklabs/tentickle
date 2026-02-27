@@ -327,17 +327,17 @@ nice-to-have on top of the durable record.
 
 Most primitives exist. One significant gap identified.
 
-| Need                              | Agentick Primitive                                  | Status                                                   |
-| --------------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
-| Session creation                  | `app.createSession()`                               | Exists                                                   |
-| Session destruction               | `session.destroy()`                                 | Exists                                                   |
-| Inter-session messaging           | Channels                                            | Exists                                                   |
-| Session lifecycle observation     | Events                                              | Exists                                                   |
-| Parent-child relationships        | `session.spawn()`                                   | Exists                                                   |
-| Parent tracking                   | `session._parent`, `session._children`              | Exists (private)                                         |
-| Session metadata                  | `session.metadata` (frozen, creation-time)          | **Done** — SessionOptions.metadata, snapshot persistence |
-| Session graph queries             | `app.getSession(id)` (read-only, no activity touch) | **Done** — registry.peek(), App.getSession               |
-| **Structural input on SendInput** | **See below**                                       | **MISSING — needs design**                               |
+| Need                          | Agentick Primitive                                  | Status                                                   |
+| ----------------------------- | --------------------------------------------------- | -------------------------------------------------------- |
+| Session creation              | `app.createSession()`                               | Exists                                                   |
+| Session destruction           | `session.destroy()`                                 | Exists                                                   |
+| Inter-session messaging       | Channels                                            | Exists                                                   |
+| Session lifecycle observation | Events                                              | Exists                                                   |
+| Parent-child relationships    | `session.spawn()`                                   | Exists                                                   |
+| Parent tracking               | `session._parent`, `session._children`              | Exists (private)                                         |
+| Session metadata              | `session.metadata` (frozen, creation-time)          | **Done** — SessionOptions.metadata, snapshot persistence |
+| Session graph queries         | `app.getSession(id)` (read-only, no activity touch) | **Done** — registry.peek(), App.getSession               |
+| Structural input on SendInput | `SendInput` + `mergeStructuralInput` at compile     | **Done** — system, grounding, sections, ephemeral        |
 
 ### Structural Primitives on SendInput (Framework Side Project)
 

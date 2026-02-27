@@ -41,3 +41,9 @@ website/api/
 coverage/
 
 *.tsbuildinfo
+
+EXPLORATIONS.md
+WORKING_IDEAS.md
+docker-compose.dev.yml
+plans/
+.claude/commands/
