@@ -4,6 +4,13 @@
  * Manages the tentickle daemon process — a background gateway
  * that TUI clients connect to over a Unix domain socket.
  *
+ * Logging (pino, structured JSON):
+ *   LOG_LEVEL — trace | debug | info | warn | error (default: "info")
+ *   LOG_FILE  — write to file instead of stdout
+ *   Also configurable via agentick.config.json: gateway.logging.{level,file}
+ *   Env vars take precedence over config file.
+ *   Set LOG_LEVEL=trace for full event stream visibility.
+ *
  * Socket file security: The Unix domain socket at ~/.tentickle/daemon.sock
  * inherits the user's umask permissions. Any process running as the same
  * user (or root) can connect. This is intentional for local development.
@@ -91,6 +98,7 @@ export async function runDaemonProcess(
   opts: DaemonOptions,
   appFactories: Record<string, () => Promise<(o: any) => Promise<any>>>,
 ): Promise<void> {
+  const { Logger } = await import("@agentick/kernel");
   const { createGateway, loadConfig, bindConfig } = await import("@agentick/gateway");
   const { bindSessionStore, bindMemory } = await import("@tentickle/agent");
   const { CronService, bindSchedulerStore } = await import("@agentick/scheduler");
@@ -108,6 +116,23 @@ export async function runDaemonProcess(
     },
   });
   bindConfig(configStore);
+
+  // Configure logging: env vars override config file.
+  // Cast to any — gateway.logging may not exist in published @agentick/gateway types yet.
+  const gatewayConfig = configStore.get("gateway") as Record<string, unknown> | undefined;
+  const gatewayLogging = gatewayConfig?.logging as { level?: string; file?: string } | undefined;
+  const logLevel = process.env.LOG_LEVEL ?? gatewayLogging?.level ?? "info";
+  const logFile = process.env.LOG_FILE ?? gatewayLogging?.file;
+
+  Logger.configure({
+    level: logLevel as "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "silent",
+    ...(logFile && {
+      transport: {
+        target: "pino/file",
+        options: { destination: logFile },
+      },
+    }),
+  });
 
   const agentConfig = configStore.get("agent");
   const defaultAgent = opts.agent ?? agentConfig?.defaultAgent ?? "main";
