@@ -19,7 +19,10 @@ const TENTICKLE_HINTS: Record<ChatMode, { key: string; action: string; color?: s
     { key: "Ctrl+L", action: "clear" },
     { key: "Ctrl+C", action: "exit" },
   ],
-  streaming: [{ key: "Ctrl+C", action: "abort" }],
+  streaming: [
+    { key: "Esc", action: "abort" },
+    { key: "Enter", action: "steer" },
+  ],
   confirming_tool: [
     { key: "Y", action: "approve", color: "green" },
     { key: "N", action: "reject", color: "red" },

@@ -330,10 +330,10 @@ export function TentickleTUI({ sessionId, commands: extraCommands, children }: T
       return;
     }
 
-    // Idle mode input routing
-    if (chatMode === "idle") {
-      // Context file focus mode
-      if (contextFocus !== null) {
+    // Input routing — active in idle and streaming (queue mode enables steering)
+    if (chatMode === "idle" || chatMode === "streaming") {
+      // Context file focus mode (idle only)
+      if (chatMode === "idle" && contextFocus !== null) {
         if (key.leftArrow) {
           setContextFocus(Math.max(0, contextFocus - 1));
           return;
@@ -358,8 +358,8 @@ export function TentickleTUI({ sessionId, commands: extraCommands, children }: T
         return;
       }
 
-      // Attachment focus mode
-      if (attachmentFocus !== null) {
+      // Attachment focus mode (idle only)
+      if (chatMode === "idle" && attachmentFocus !== null) {
         if (key.leftArrow) {
           setAttachmentFocus(Math.max(0, attachmentFocus - 1));
           return;
@@ -384,8 +384,8 @@ export function TentickleTUI({ sessionId, commands: extraCommands, children }: T
         return;
       }
 
-      // ↑ with empty input → enter strip focus (context first, then attachments)
-      if (key.upArrow && editor.value === "") {
+      // ↑ with empty input → enter strip focus (idle only)
+      if (chatMode === "idle" && key.upArrow && editor.value === "") {
         if (contextFiles.length > 0) {
           setContextFocus(contextFiles.length - 1);
           return;
@@ -458,7 +458,7 @@ export function TentickleTUI({ sessionId, commands: extraCommands, children }: T
         isActive={true}
         placeholder={
           chatMode === "streaming"
-            ? "Thinking..."
+            ? "Type to steer · Esc to abort"
             : chatMode === "confirming_tool"
               ? "Type feedback to reject, or press Y/N/A..."
               : "Describe what you need..."
