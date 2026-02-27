@@ -62,6 +62,7 @@ Both agents compose on `<TentickleAgent>` — a base component that wires up eve
 | **Model**        | Dynamic multi-provider selection (OpenAI, Google, Apple)                         |
 | **Context**      | Workspace grounding, project conventions, CLAUDE.md, rules                       |
 | **Memory**       | Per-project persistent memory (`~/.tentickle/projects/{slug}/MEMORY.md`)         |
+| **Artifacts**    | Named, typed worker outputs — queryable by session, name, type                   |
 | **User Profile** | Info the agent maintains about its human (`~/.tentickle/user/`)                  |
 | **Entities**     | People, orgs, things the agent knows about (`~/.tentickle/entities/`)            |
 | **Skills**       | Discovered `SKILL.md` files from project and global directories                  |
@@ -74,20 +75,23 @@ Consumer agents add behavior on top: system prompts, gates, continuation logic, 
 
 ## Tools
 
-| Tool         | Source                | Description                                 |
-| ------------ | --------------------- | ------------------------------------------- |
-| `shell`      | `@agentick/sandbox`   | Run commands in the workspace               |
-| `read_file`  | `@agentick/sandbox`   | Read file contents                          |
-| `write_file` | `@agentick/sandbox`   | Create or overwrite files                   |
-| `edit_file`  | `@agentick/sandbox`   | Surgical edits with 3-level matching        |
-| `glob`       | `@tentickle/tools`    | Find files by pattern                       |
-| `grep`       | `@tentickle/tools`    | Search file contents by regex               |
-| `task_list`  | `@tentickle/agent`    | Plan, track, and complete multi-step work   |
-| `spawn`      | `@tentickle/agent`    | Delegate sub-tasks to parallel child agents |
-| `explore`    | `@tentickle/agent`    | Open-ended research via sub-agent           |
-| `add-dir`    | `@tentickle/agent`    | Mount additional directories at runtime     |
-| `set_knob`   | `@agentick/core`      | Expand collapsed context, clear gates       |
-| `schedule`   | `@agentick/scheduler` | Create scheduled jobs and heartbeats        |
+| Tool             | Source                 | Description                                         |
+| ---------------- | ---------------------- | --------------------------------------------------- |
+| `shell`          | `@agentick/sandbox`    | Run commands in the workspace                       |
+| `read_file`      | `@agentick/sandbox`    | Read file contents                                  |
+| `write_file`     | `@agentick/sandbox`    | Create or overwrite files                           |
+| `edit_file`      | `@agentick/sandbox`    | Surgical edits with 3-level matching                |
+| `glob`           | `@tentickle/tools`     | Find files by pattern                               |
+| `grep`           | `@tentickle/tools`     | Search file contents by regex                       |
+| `task_list`      | `@tentickle/agent`     | Plan, track, and complete multi-step work           |
+| `spawn`          | `@tentickle/agent`     | Delegate sub-tasks to parallel child agents         |
+| `explore`        | `@tentickle/agent`     | Open-ended research via sub-agent                   |
+| `add-dir`        | `@tentickle/agent`     | Mount additional directories at runtime             |
+| `store_artifact` | `@tentickle/artifacts` | Declare a named output (code, analysis, plan, etc.) |
+| `get_artifact`   | `@tentickle/artifacts` | Retrieve an artifact by ID or name                  |
+| `list_artifacts` | `@tentickle/artifacts` | List available artifacts, filter by type            |
+| `set_knob`       | `@agentick/core`       | Expand collapsed context, clear gates               |
+| `schedule`       | `@agentick/scheduler`  | Create scheduled jobs and heartbeats                |
 
 ## Verification Gates
 
@@ -215,6 +219,7 @@ tentickle/
 │   │       ├── connectors.ts      # Telegram + iMessage bridges
 │   │       ├── storage/           # SQLite session store, migrations
 │   │       └── tools/             # Task list, spawn, explore, add-dir
+│   ├── artifacts/                  # @tentickle/artifacts — worker output store
 │   ├── tools/                     # @tentickle/tools — Glob, Grep
 │   └── tentickle/                 # tentickle — meta-package & CLI binary
 ├── CLAUDE.md
@@ -290,6 +295,48 @@ tentickle start --port 18789                  # WebSocket + Unix socket
 tentickle start --port 18789 --host 127.0.0.1 # Bind to localhost only
 ```
 
+## Logging
+
+The daemon uses [pino](https://github.com/pinojs/pino) for structured logging. By default it logs at `info` level to stdout (foreground) or `~/.tentickle/daemon.log` (background).
+
+### Environment Variables
+
+| Variable    | Default  | Description                                              |
+| ----------- | -------- | -------------------------------------------------------- |
+| `LOG_LEVEL` | `"info"` | Log verbosity: `trace`, `debug`, `info`, `warn`, `error` |
+| `LOG_FILE`  | —        | Write logs to this file instead of stdout                |
+
+Set `LOG_LEVEL=trace` for full event stream visibility — every event flowing through the gateway is logged with type and session ID.
+
+```bash
+# Foreground with trace logging
+LOG_LEVEL=trace tentickle start --foreground
+
+# Background with file output
+LOG_LEVEL=trace LOG_FILE=/tmp/tentickle-events.log tentickle start
+tail -f /tmp/tentickle-events.log
+
+# Docker
+docker run -e LOG_LEVEL=trace tentickle
+```
+
+### Config File
+
+Logging can also be configured in `agentick.config.json`:
+
+```json
+{
+  "gateway": {
+    "logging": {
+      "level": "trace",
+      "file": "/tmp/tentickle-events.log"
+    }
+  }
+}
+```
+
+Environment variables take precedence over config file values.
+
 ## Status
 
 Early. The agents work and handle real tasks, but there's no polished CLI binary you can `npx`, no `init` command, no `doctor`.
@@ -303,6 +350,7 @@ What works today:
 - Task planning and tracking
 - Session persistence — SQLite-backed, messages survive restarts
 - Persistent project memory and layered settings
+- Artifact store — named, typed, queryable worker outputs with session scoping
 - Multi-model support (OpenAI-compatible, Google, Apple)
 - Scheduled jobs and heartbeats via `@agentick/scheduler`
 - Telegram and iMessage connectors

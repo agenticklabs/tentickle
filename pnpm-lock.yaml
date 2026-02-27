@@ -180,6 +180,9 @@ importers:
       '@agentick/shared':
         specifier: link:../../../agentick/packages/shared
         version: link:../../../agentick/packages/shared
+      '@tentickle/artifacts':
+        specifier: workspace:*
+        version: link:../artifacts
       '@tentickle/memory':
         specifier: workspace:*
         version: link:../memory
@@ -189,6 +192,28 @@ importers:
       '@tentickle/tools':
         specifier: workspace:*
         version: link:../tools
+      react:
+        specifier: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
+        version: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.14
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/artifacts:
+    dependencies:
+      '@agentick/core':
+        specifier: link:../../../agentick/packages/core
+        version: link:../../../agentick/packages/core
+      '@agentick/shared':
+        specifier: link:../../../agentick/packages/shared
+        version: link:../../../agentick/packages/shared
       react:
         specifier: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
         version: link:../../../agentick/node_modules/.pnpm/react@19.2.4/node_modules/react
@@ -217,6 +242,9 @@ importers:
       '@agentick/gateway':
         specifier: link:../../../agentick/packages/gateway
         version: link:../../../agentick/packages/gateway
+      '@agentick/kernel':
+        specifier: link:../../../agentick/packages/kernel
+        version: link:../../../agentick/packages/kernel
       '@agentick/scheduler':
         specifier: link:../../../agentick/packages/scheduler
         version: link:../../../agentick/packages/scheduler

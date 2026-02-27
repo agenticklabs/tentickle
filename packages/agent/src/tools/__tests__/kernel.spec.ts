@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { EventEmitter } from "node:events";
+import { DatabaseSync } from "node:sqlite";
 import { extractText } from "@agentick/shared";
 import type { ToolClass } from "@agentick/core";
 import {
@@ -8,6 +9,7 @@ import {
   createCancelTool,
   createSendWorkerTool,
 } from "../kernel.js";
+import { ArtifactStore, ensureArtifactSchema, bindArtifactStore } from "@tentickle/artifacts";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -489,5 +491,156 @@ describe("createKernelDelegateTool", () => {
 
     // Clean up: resolve the worker so the .then() handler can fire
     resolveWorker({ response: "done" });
+  });
+
+  // -------------------------------------------------------------------------
+  // Artifact integration: completion notification includes artifacts
+  // -------------------------------------------------------------------------
+
+  describe("artifact integration", () => {
+    let artifactDb: DatabaseSync;
+    let artifactStore: ArtifactStore;
+
+    afterEach(() => {
+      bindArtifactStore(null as any);
+      if (artifactStore) {
+        artifactStore.destroy();
+        artifactStore = undefined!;
+      }
+      if (artifactDb) {
+        artifactDb.close();
+        artifactDb = undefined!;
+      }
+    });
+
+    function setupArtifactStore() {
+      artifactDb = new DatabaseSync(":memory:");
+      ensureArtifactSchema(artifactDb);
+      artifactStore = ArtifactStore.create(artifactDb);
+      bindArtifactStore(artifactStore);
+    }
+
+    it("includes artifact summary in completion notification", async () => {
+      setupArtifactStore();
+
+      const { app, workerSession: ws } = createDelegateMocks({ response: "analysis complete" });
+      const tool = createKernelDelegateTool(app, OWNER_ID);
+
+      // Pre-populate artifacts scoped to the worker's session ID
+      artifactStore.store(
+        {
+          name: "auth-analysis",
+          type: "analysis",
+          content: "JWT with refresh tokens",
+          summary: "Auth overview",
+        },
+        ws.id,
+      );
+      artifactStore.store(
+        {
+          name: "migration-plan",
+          type: "plan",
+          content: "Step 1: add column\nStep 2: backfill",
+          summary: "DB migration strategy",
+        },
+        ws.id,
+      );
+
+      await run(tool, { task: "analyze auth", spec: "review auth system" });
+
+      await vi.waitFor(() => {
+        expect(app.receive).toHaveBeenCalled();
+      });
+
+      const receivedText = app.receive.mock.calls[0][1].payload.content[0].text;
+      expect(receivedText).toContain("[Worker Complete]");
+      expect(receivedText).toContain("Artifacts:");
+      expect(receivedText).toContain("auth-analysis (analysis): Auth overview");
+      expect(receivedText).toContain("migration-plan (plan): DB migration strategy");
+    });
+
+    it("uses content snippet when artifact has no summary", async () => {
+      setupArtifactStore();
+
+      const { app, workerSession: ws } = createDelegateMocks({ response: "done" });
+      const tool = createKernelDelegateTool(app, OWNER_ID);
+
+      artifactStore.store(
+        { name: "raw-output", type: "code", content: "function authenticate() { return true; }" },
+        ws.id,
+      );
+
+      await run(tool, { task: "write code", spec: "do it" });
+
+      await vi.waitFor(() => {
+        expect(app.receive).toHaveBeenCalled();
+      });
+
+      const receivedText = app.receive.mock.calls[0][1].payload.content[0].text;
+      expect(receivedText).toContain("raw-output (code): function authenticate()");
+    });
+
+    it("omits artifact section when worker produced no artifacts", async () => {
+      setupArtifactStore();
+
+      const { app } = createDelegateMocks({ response: "nothing produced" });
+      const tool = createKernelDelegateTool(app, OWNER_ID);
+
+      await run(tool, { task: "simple task", spec: "do it" });
+
+      await vi.waitFor(() => {
+        expect(app.receive).toHaveBeenCalled();
+      });
+
+      const receivedText = app.receive.mock.calls[0][1].payload.content[0].text;
+      expect(receivedText).toContain("[Worker Complete]");
+      expect(receivedText).not.toContain("Artifacts:");
+    });
+
+    it("only includes artifacts from the worker session, not other sessions", async () => {
+      setupArtifactStore();
+
+      const { app, workerSession: ws } = createDelegateMocks({ response: "done" });
+      const tool = createKernelDelegateTool(app, OWNER_ID);
+
+      // Artifact from THIS worker
+      artifactStore.store({ name: "mine", type: "code", content: "my code" }, ws.id);
+      // Artifact from a DIFFERENT worker
+      artifactStore.store(
+        { name: "theirs", type: "code", content: "their code" },
+        "other-worker-session",
+      );
+      // Artifact with no session
+      artifactStore.store({ name: "orphan", type: "code", content: "no session" });
+
+      await run(tool, { task: "scoped check", spec: "do it" });
+
+      await vi.waitFor(() => {
+        expect(app.receive).toHaveBeenCalled();
+      });
+
+      const receivedText = app.receive.mock.calls[0][1].payload.content[0].text;
+      expect(receivedText).toContain("mine (code)");
+      expect(receivedText).not.toContain("theirs");
+      expect(receivedText).not.toContain("orphan");
+    });
+
+    it("works without artifact store bound (graceful degradation)", async () => {
+      // Don't setup — getArtifactStore() returns null
+      bindArtifactStore(null as any);
+
+      const { app } = createDelegateMocks({ response: "done" });
+      const tool = createKernelDelegateTool(app, OWNER_ID);
+
+      await run(tool, { task: "no store", spec: "do it" });
+
+      await vi.waitFor(() => {
+        expect(app.receive).toHaveBeenCalled();
+      });
+
+      const receivedText = app.receive.mock.calls[0][1].payload.content[0].text;
+      expect(receivedText).toContain("[Worker Complete]");
+      expect(receivedText).not.toContain("Artifacts:");
+    });
   });
 });

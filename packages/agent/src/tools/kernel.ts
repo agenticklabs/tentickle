@@ -2,6 +2,7 @@ import { createTool } from "@agentick/core";
 import type { App, InboxMessageInput, ToolClass } from "@agentick/core";
 import { z } from "zod";
 import { pipeConfirmations } from "../utils/pipe-confirmations.js";
+import { getArtifactStore } from "@tentickle/artifacts";
 
 function inboxMessage(source: string, text: string): InboxMessageInput {
   return {
@@ -51,12 +52,18 @@ You remain available for other work while workers run in background sessions.`,
       handle.result.then(
         (result) => {
           unpipe();
+          const artifactStore = getArtifactStore();
+          const produced = artifactStore?.list(session.id) ?? [];
+          const artifactLines =
+            produced.length > 0
+              ? `\n\nArtifacts:\n${produced.map((a) => `- ${a.name} (${a.type}): ${a.summary ?? a.content.slice(0, 100)}`).join("\n")}`
+              : "";
           app
             .receive(
               ownerSessionId,
               inboxMessage(
                 "worker",
-                `[Worker Complete] "${input.task}"\n\nResult: ${result.response.slice(0, 2000)}`,
+                `[Worker Complete] "${input.task}"\n\nResult: ${result.response.slice(0, 2000)}${artifactLines}`,
               ),
             )
             .catch(() => {});

@@ -46,6 +46,7 @@ export default defineConfig({
           items: [
             { text: "Context Engineering", link: "/docs/context-engineering" },
             { text: "Cross-Session Memory", link: "/docs/memory" },
+            { text: "Artifacts", link: "/docs/artifacts" },
             { text: "Verification Gates", link: "/docs/gates" },
             { text: "The TUI", link: "/docs/tui" },
           ],

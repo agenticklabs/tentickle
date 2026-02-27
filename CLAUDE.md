@@ -58,13 +58,19 @@ Clean, direct, well-crafted code only.
 ```
 tentickle/
 ├── packages/
-│   └── tools/          # @tentickle/tools — Glob, Grep (supplements sandbox)
+│   ├── agent/          # @tentickle/agent — shared base component
+│   ├── artifacts/      # @tentickle/artifacts — named, typed worker outputs
+│   ├── cli/            # @tentickle/cli — CLI + daemon
+│   ├── memory/         # @tentickle/memory — SQLite + FTS5 persistent memory
+│   ├── storage/        # @tentickle/storage — SQLite session store
+│   ├── tools/          # @tentickle/tools — Glob, Grep (supplements sandbox)
+│   └── tui/            # @tentickle/tui — terminal UI
 ├── agents/
-│   └── coding/         # @tentickle/coding — agent + TUI + CLI entry point
+│   ├── coding/         # @tentickle/coding — coding agent
+│   └── main/           # @tentickle/main — personal orchestration agent
 ├── CLAUDE.md           # This file
 ├── AGENTS.md           # Agent architecture & mission
-├── ROADMAP.md          # Development phases
-└── CONTRIBUTING.md     # Development conventions
+└── ROADMAP.md          # Development phases
 ```
 
 ## Shared Package First

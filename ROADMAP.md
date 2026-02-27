@@ -84,6 +84,9 @@ SQLite database with forward-only migrations.
 - [x] TentickleSessionStore — SQLite session metadata + snapshots
 - [x] Migration system — numbered SQL files, forward-only
 - [x] Delegation types — session_type column (delegation/supervision)
+- [x] ArtifactStore — named, typed, queryable worker outputs (store/get/list tools)
+- [x] Session-scoped artifacts — kernel queries worker artifacts on completion
+- [x] COM.sessionId — tool handlers can identify their session (upstream fix)
 
 ### Next
 

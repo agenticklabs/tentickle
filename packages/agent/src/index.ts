@@ -108,6 +108,18 @@ export type {
   ScoredMemoryEntry,
 } from "@tentickle/memory";
 
+// Artifacts (re-export from @tentickle/artifacts)
+export {
+  ArtifactStore,
+  ensureArtifactSchema,
+  bindArtifactStore,
+  getArtifactStore,
+  createStoreArtifactTool,
+  createGetArtifactTool,
+  createListArtifactsTool,
+} from "@tentickle/artifacts";
+export type { ArtifactInput, ArtifactEntry } from "@tentickle/artifacts";
+
 // Settings
 export {
   loadSettings,

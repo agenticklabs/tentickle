@@ -10,6 +10,7 @@ import {
   bindSessionStore,
 } from "@tentickle/storage";
 import { ensureMemorySchema, TentickleMemory } from "@tentickle/memory";
+import { ensureArtifactSchema, ArtifactStore, bindArtifactStore } from "@tentickle/artifacts";
 import { getDbPath } from "./paths.js";
 
 export interface TentickleAppOptions extends AppOptions {
@@ -21,6 +22,7 @@ export interface TentickleAppResult<P> {
   app: App<P>;
   store: TentickleSessionStore;
   memory: TentickleMemory;
+  artifacts: ArtifactStore;
 }
 
 function wireStorePersistence(store: TentickleSessionStore, event: StreamEvent): void {
@@ -76,9 +78,12 @@ export async function createTentickleApp<P extends Record<string, unknown>>(
   const db = await openDatabase(getDbPath(), { allowExtension: true });
   ensureStorageSchema(db);
   ensureMemorySchema(db);
+  ensureArtifactSchema(db);
   const store = new TentickleSessionStore(db);
   const memory = TentickleMemory.create(db);
+  const artifacts = ArtifactStore.create(db);
   bindSessionStore(store);
+  bindArtifactStore(artifacts);
 
   // Enable semantic search unless explicitly disabled
   if (options.embedding !== false) {
@@ -102,7 +107,7 @@ export async function createTentickleApp<P extends Record<string, unknown>>(
     },
   });
 
-  return { app, store, memory };
+  return { app, store, memory, artifacts };
 }
 
 // ---------------------------------------------------------------------------

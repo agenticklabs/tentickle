@@ -18,6 +18,13 @@ import { TaskStore, bindTaskStore } from "./task-store.js";
 import { createTaskTool } from "./tools/task-list.js";
 import { createRememberTool, createRecallTool, getMemory } from "@tentickle/memory";
 import type { TentickleMemory } from "@tentickle/memory";
+import {
+  createStoreArtifactTool,
+  createGetArtifactTool,
+  createListArtifactsTool,
+  getArtifactStore,
+} from "@tentickle/artifacts";
+import type { ArtifactStore } from "@tentickle/artifacts";
 import { AddDirCommand } from "./tools/add-dir.js";
 import { UserContext } from "./user-context.js";
 import { EntityAwareness } from "./entities.js";
@@ -34,6 +41,7 @@ interface TentickleContext {
   settings: TentickleSettings;
   workspace: string;
   memory: TentickleMemory | null;
+  artifacts: ArtifactStore | null;
 }
 
 const TentickleCtx = createContext<TentickleContext | null>(null);
@@ -70,6 +78,8 @@ export interface TentickleAgentProps {
   identity?: boolean;
   /** Cross-session memory instance (created by createTentickleApp). */
   memory?: TentickleMemory;
+  /** Artifact store instance (created by createTentickleApp). */
+  artifacts?: ArtifactStore;
   children: React.ReactNode;
 }
 
@@ -95,6 +105,7 @@ export function TentickleAgent({
   limits,
   identity = true,
   memory,
+  artifacts,
   children,
 }: TentickleAgentProps) {
   // Scaffold global data dir (idempotent)
@@ -140,6 +151,21 @@ export function TentickleAgent({
     [resolvedMemory],
   );
 
+  // Artifact tools — same pattern
+  const resolvedArtifacts = artifacts ?? getArtifactStore();
+  const StoreArtifactTool = useMemo(
+    () => (resolvedArtifacts ? createStoreArtifactTool(resolvedArtifacts) : null),
+    [resolvedArtifacts],
+  );
+  const GetArtifactTool = useMemo(
+    () => (resolvedArtifacts ? createGetArtifactTool(resolvedArtifacts) : null),
+    [resolvedArtifacts],
+  );
+  const ListArtifactsTool = useMemo(
+    () => (resolvedArtifacts ? createListArtifactsTool(resolvedArtifacts) : null),
+    [resolvedArtifacts],
+  );
+
   return (
     <Sandbox
       provider={provider ?? localProvider()}
@@ -149,7 +175,15 @@ export function TentickleAgent({
       env={env}
       limits={limits}
     >
-      <TentickleCtx value={{ taskStore, settings, workspace, memory: resolvedMemory }}>
+      <TentickleCtx
+        value={{
+          taskStore,
+          settings,
+          workspace,
+          memory: resolvedMemory,
+          artifacts: resolvedArtifacts,
+        }}
+      >
         <TaskStoreBridge store={taskStore} />
         {identity && <Identity />}
         <UserContext />
@@ -176,6 +210,9 @@ export function TentickleAgent({
         <AddDirCommand />
         {RememberTool && <RememberTool />}
         {RecallTool && <RecallTool />}
+        {StoreArtifactTool && <StoreArtifactTool />}
+        {GetArtifactTool && <GetArtifactTool />}
+        {ListArtifactsTool && <ListArtifactsTool />}
 
         {children}
       </TentickleCtx>

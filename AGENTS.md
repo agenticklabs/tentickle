@@ -210,10 +210,15 @@ correctly NOT user-audience tools — they stay as plain SlashCommands.
 
 ## Package Map
 
-| Package             | Purpose                    | Status |
-| ------------------- | -------------------------- | ------ |
-| `@tentickle/tools`  | Glob, Grep tool components | Active |
-| `@tentickle/coding` | Coding agent + TUI + CLI   | Active |
+| Package                | Purpose                                    | Status |
+| ---------------------- | ------------------------------------------ | ------ |
+| `@tentickle/tools`     | Glob, Grep tool components                 | Active |
+| `@tentickle/agent`     | Shared base component (`<TentickleAgent>`) | Active |
+| `@tentickle/memory`    | SQLite + FTS5 persistent memory            | Active |
+| `@tentickle/storage`   | SQLite session store + migrations          | Active |
+| `@tentickle/artifacts` | Named, typed, queryable worker outputs     | Active |
+| `@tentickle/coding`    | Coding agent + TUI + CLI                   | Active |
+| `@tentickle/main`      | Personal orchestration agent               | Active |
 
 ## Development Priorities
 

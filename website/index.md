@@ -87,17 +87,18 @@ function MainAgent({ workspace }) {
 
 Everything an agent needs, wired up as components:
 
-| Layer        | What It Provides                                                                 |
-| ------------ | -------------------------------------------------------------------------------- |
-| **Sandbox**  | OS-level workspace isolation (seatbelt on macOS, bwrap on Linux)                 |
-| **Identity** | `~/.tentickle/IDENTITY.md` — the agent's self-authored soul document             |
-| **Model**    | Dynamic multi-provider selection (OpenAI, Google, Apple)                         |
-| **Memory**   | Per-project persistent memory the agent reads and writes each turn               |
-| **Entities** | People, orgs, projects — profiles the agent maintains over time                  |
-| **Rules**    | Layered rules (global + project-level) with override semantics                   |
-| **Skills**   | Discovered `SKILL.md` files from project and global directories                  |
-| **Timeline** | Tiered compaction — current execution at full fidelity, older messages collapsed |
-| **Tools**    | Shell, file I/O, glob, grep, task list, spawn, explore                           |
+| Layer         | What It Provides                                                                 |
+| ------------- | -------------------------------------------------------------------------------- |
+| **Sandbox**   | OS-level workspace isolation (seatbelt on macOS, bwrap on Linux)                 |
+| **Identity**  | `~/.tentickle/IDENTITY.md` — the agent's self-authored soul document             |
+| **Model**     | Dynamic multi-provider selection (OpenAI, Google, Apple)                         |
+| **Memory**    | Per-project persistent memory the agent reads and writes each turn               |
+| **Entities**  | People, orgs, projects — profiles the agent maintains over time                  |
+| **Rules**     | Layered rules (global + project-level) with override semantics                   |
+| **Skills**    | Discovered `SKILL.md` files from project and global directories                  |
+| **Timeline**  | Tiered compaction — current execution at full fidelity, older messages collapsed |
+| **Artifacts** | Named, typed worker outputs — queryable by session, name, type                   |
+| **Tools**     | Shell, file I/O, glob, grep, task list, spawn, explore                           |
 
 ## Verification Gates
 

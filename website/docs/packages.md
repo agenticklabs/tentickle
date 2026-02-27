@@ -7,6 +7,7 @@ tentickle/
 │   └── main/            @tentickle/main
 ├── packages/
 │   ├── agent/           @tentickle/agent
+│   ├── artifacts/       @tentickle/artifacts
 │   ├── tools/           @tentickle/tools
 │   └── tentickle/       tentickle (meta-package)
 ```
@@ -26,7 +27,7 @@ The shared base component. Provides `<TentickleAgent>` which wires up:
 - Layered settings system
 - Connector startup for Telegram and iMessage
 
-Also exports tool factories (`createSpawnTool`, `createExploreTool`, `createTaskTool`) and path helpers for the `~/.tentickle/` data directory.
+Also exports tool factories (`createSpawnTool`, `createExploreTool`, `createTaskTool`), artifact tool factories, and path helpers for the `~/.tentickle/` data directory.
 
 ## `@tentickle/coding`
 
@@ -47,6 +48,14 @@ The main/personal agent. Adds:
 - Data location context
 - Spawn and explore tools
 
+## `@tentickle/artifacts`
+
+Named, typed, queryable worker outputs. Workers call `store_artifact` to declare what they produced. The kernel queries artifacts by session ID when a worker completes, so the orchestrator knows exactly what was produced without parsing free-text responses.
+
+Three tools (`store_artifact`, `get_artifact`, `list_artifacts`) are wired into `<TentickleAgent>` automatically. `ArtifactStore` is a thin SQLite class — no embeddings, no FTS, just relational queries by session, name, and type.
+
+Same architecture as memory: `createTool`-based library, global binding (`bindArtifactStore`/`getArtifactStore`), versioned migrations, shared SQLite database.
+
 ## `@tentickle/tools`
 
 File search tools that complement the sandbox's built-in tools:
@@ -64,9 +73,13 @@ Meta-package and future CLI entry point (`npx tentickle`). Re-exports from all p
 tentickle
 ├── @tentickle/coding
 │   └── @tentickle/agent
+│       ├── @tentickle/artifacts
+│       ├── @tentickle/memory
 │       └── @tentickle/tools
 └── @tentickle/main
     └── @tentickle/agent
+        ├── @tentickle/artifacts
+        ├── @tentickle/memory
         └── @tentickle/tools
 ```
 
