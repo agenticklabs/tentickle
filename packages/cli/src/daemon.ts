@@ -181,6 +181,11 @@ export async function runDaemonProcess(
   const { dashboardPlugin } = await import("./plugins/dashboard.js");
   plugins.push(dashboardPlugin());
 
+  // Protocol plugins — MCP server + OpenAI-compatible inference
+  const { mcpServerPlugin, openaiCompatPlugin } = await import("@agentick/gateway");
+  plugins.push(mcpServerPlugin({ sessionId: "default", path: "/mcp" }));
+  plugins.push(openaiCompatPlugin({ pathPrefix: "/v1" }));
+
   // Create gateway — always Unix socket, optionally WebSocket on a port
   const gateway = createGateway({
     apps: gatewayApps,
