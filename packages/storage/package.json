@@ -36,8 +36,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@agentick/core": "^0.12.0",
-    "@agentick/shared": "^0.12.0"
+    "@agentick/core": "^0.14.21",
+    "@agentick/shared": "^0.14.21"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
